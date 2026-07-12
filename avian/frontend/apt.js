@@ -1479,28 +1479,32 @@
     // before this script loads - e.g. an inline <script> in index.html.
     var u = (window.AV_AUTH_USER || 'birdnet');
     var p = document.getElementById('lockPass').value;
-    var hdr = 'Basic ' + btoa(u + ':' + p);
-    // POST to menu.php with the header so the browser caches the basic
-    // creds for every subsequent request. If Caddy basic_auth accepts
-    // them we get a 200 and the drawer renders; 401 means wrong password.
-    fetch('./avian/api/menu.php', {
-      method: 'POST',
-      headers: { 'Authorization': hdr },
-      credentials: 'same-origin',
-    }).then(function (r) {
-      if (r.status === 200) {
-        return r.json().then(function (j) { renderMenu(j.items || []); });
-      } else if (r.status === 401) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', './avian/api/menu.php', true, u, p);
+    xhr.onload = function () {
+      if (xhr.status === 200) {
+        try {
+          var j = JSON.parse(xhr.responseText);
+          renderMenu(j.items || []);
+        } catch (err) {
+          lockHint.textContent = 'auth unavailable.';
+          lockHint.classList.add('lock-err');
+        }
+      } else if (xhr.status === 401) {
         lockHint.textContent = 'wrong password.';
         lockHint.classList.add('lock-err');
+        document.getElementById('lockPass').value = '';
+        document.getElementById('lockPass').focus();
       } else {
         lockHint.textContent = 'auth unavailable.';
         lockHint.classList.add('lock-err');
       }
-    }).catch(function () {
+    };
+    xhr.onerror = function () {
       lockHint.textContent = 'network error.';
       lockHint.classList.add('lock-err');
-    });
+    };
+    xhr.send();
   });
 
   // Render the unlocked drawer:
@@ -2329,10 +2333,11 @@
     if (s < 86400) return Math.round(s / 3600) + 'h';
     return Math.round(s / 86400) + 'd';
   }
-  // Admin endpoints rely on the session cookie set by /api/auth/login -
-  // no Authorization header needed (and nothing sensitive in JS-readable
-  // storage). credentials: 'same-origin' is the default but spelled out
-  // for clarity.
+  // After the menu is unlocked, the browser has cached the Basic auth
+  // credentials because the unlock request was made with XMLHttpRequest's
+  // username/password parameter. `credentials: 'same-origin'` lets those
+  // cached credentials travel to the protected admin endpoints without
+  // storing anything in JS-readable storage.
   function adminApi(url) {
     return fetch(url, { credentials: 'same-origin', cache: 'no-store' });
   }
