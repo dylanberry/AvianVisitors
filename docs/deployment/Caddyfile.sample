@@ -17,6 +17,8 @@ http:// {
 	}
 	reverse_proxy /stream localhost:8000
 	php_fastcgi unix//run/php/php8.4-fpm.sock {
+		env HTTP_AUTHORIZATION {http.request.header.Authorization}
+		env AV_REQUIRE_AUTH 1
 		try_files {path} {path}/index.html {path}/index.php index.php
 	}
 
@@ -29,6 +31,8 @@ http:// {
 	# the password.
 	@admin {
 		path /avian/api/menu.php
+		path /avian/api/config.php
+		path /avian/api/birdnet-status.php
 		path /log*
 		path /stats*
 		path /terminal*
