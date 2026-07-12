@@ -50,6 +50,16 @@ def readAudioData(path, overlap, sample_rate, chunk_duration):
     # Open file with librosa (uses ffmpeg or libav)
     sig, rate = librosa.load(path, sr=sample_rate, mono=True, res_type='kaiser_fast')
 
+    # Apply configurable gain for quiet microphones, then hard-clip to [-1, 1].
+    conf = get_settings()
+    try:
+        gain = conf.getfloat('AUDIO_GAIN')
+    except Exception:
+        gain = 1.0
+    if gain != 1.0:
+        sig = np.clip(sig * gain, -1.0, 1.0)
+        log.info('APPLIED AUDIO_GAIN=%.2f', gain)
+
     # Split audio into chunks
     chunks = splitSignal(sig, rate, overlap, seconds=chunk_duration)
 
