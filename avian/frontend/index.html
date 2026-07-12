@@ -12,7 +12,7 @@
 <script>try{if(localStorage.getItem('bird:theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
 <link rel="stylesheet" href="./styles.css">
 </head>
-<body class="av-local">
+<body>
 <!-- Pill in the top-left slot, only visible on admin overlays
      (body.admin-on); CSS in styles.css hides it everywhere else.
      href="/" returns to the collage view via a full reload, which is
@@ -213,6 +213,7 @@
   </div>
 </section>
 
-<script src="./apt.js?v=r13"></script>
+<script>window.AV_AUTH_USER="birdnet";</script>
+<script src="./apt.js?v=r14"></script>
 </body>
 </html>
