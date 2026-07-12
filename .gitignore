@@ -53,6 +53,8 @@ whitelist_species_list.txt
 # --- AvianVisitors: local-only material, deliberately not shipped ---
 # Claude Code session data
 .claude/
+# OpenCode / omo workspace plans and continuation state
+.omo/
 # Large source / reference imagery kept on disk for working
 avian/assets/references/
 # Superseded assets retained locally

@@ -14,6 +14,7 @@
 // /avian/api/* with basic_auth in your Caddyfile - see avian/forwarding/.
 
 declare(strict_types=1);
+set_time_limit(120);
 
 $sci = trim((string)($_GET['sci'] ?? ''));
 if ($sci === '') {
@@ -99,7 +100,7 @@ $wpJson = @file_get_contents($wpUrl, false, $ctx);
 $srcUrl = null;
 if ($wpJson !== false) {
     $j = json_decode($wpJson, true);
-    $srcUrl = $j['originalimage']['source'] ?? $j['thumbnail']['source'] ?? null;
+    $srcUrl = $j['thumbnail']['source'] ?? $j['originalimage']['source'] ?? null;
 }
 // Defensive: only follow URLs on Wikimedia / Wikipedia hosts so a
 // poisoned summary endpoint can't redirect us to arbitrary servers.
@@ -120,6 +121,25 @@ if (!$imgBytes || strlen($imgBytes) < 1024) {
     http_response_code(503);
     echo 'failed to fetch source image';
     exit;
+}
+
+// Pre-resize the source image so rembg doesn't choke on a 4K+ photo.
+$srcIm = @imagecreatefromstring($imgBytes);
+if ($srcIm !== false) {
+    $w = imagesx($srcIm); $h = imagesy($srcIm);
+    $preMax = 800;
+    if ($w > $preMax || $h > $preMax) {
+        $scale = $preMax / max($w, $h);
+        $nw = (int)($w * $scale); $nh = (int)($h * $scale);
+        $resized = imagecreatetruecolor($nw, $nh);
+        imagecopyresampled($resized, $srcIm, 0, 0, 0, 0, $nw, $nh, $w, $h);
+        imagedestroy($srcIm);
+        $srcIm = $resized;
+    }
+    ob_start();
+    imagejpeg($srcIm, null, 85);
+    $imgBytes = ob_get_clean();
+    imagedestroy($srcIm);
 }
 
 // rembg via the wrapper. u2netp = lightweight model (~50MB peak RAM -

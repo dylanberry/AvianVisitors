@@ -1,18 +1,29 @@
-# Optional Basic-auth gate for the collage.
-# Use only if you're NOT putting Cloudflare Access in front of the
-# public URL. Replace the bcrypt hash below - generate via:
+# Optional Basic-auth gate for the admin/tools menu.
+#
+# Use only if you're NOT putting Cloudflare Access in front of the public URL.
+# This keeps the live collage public; only the menu unlock and backend admin
+# endpoints require a password.
+#
+# Generate the bcrypt hash with:
 #   caddy hash-password --plaintext 'your-pass'
 #
-# Drop this into /etc/caddy/conf.d/ alongside avian.caddy and reload.
+# Replace YOUR_HASH below, then drop the whole block (or import the snippet)
+# into /etc/caddy/Caddyfile and reload Caddy.
 
 (avian_basicauth) {
-    basic_auth {
+    @admin {
+        path /avian/api/menu.php
+        path /log*
+        path /stats*
+        path /terminal*
+    }
+    basic_auth @admin {
         # username   bcrypt-hash
-        avian        $2a$14$REPLACE_WITH_HASH_FROM_caddy_hash-password
+        birdnet    $2a$14$REPLACE_WITH_HASH_FROM_caddy_hash-password
     }
 }
 
-# Example: gate only the public hostname, leave LAN open.
+# Example: protect admin endpoints on the public hostname, leave LAN open.
 # https://birds.your-domain.com {
 #     import avian_basicauth
 #     reverse_proxy localhost:80

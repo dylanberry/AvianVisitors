@@ -1,0 +1,44 @@
+# Full Caddyfile template for a BirdNET-Pi + AvianVisitors deployment.
+# Keeps the live collage public; only the admin menu/tools are password-protected.
+#
+# 1. Generate a bcrypt hash for your admin username:
+#      caddy hash-password --plaintext 'your-pass'
+# 2. Replace the hash below with your own.
+# 3. Copy this file to /etc/caddy/Caddyfile and run `sudo caddy reload`.
+
+http:// {
+	root * /home/YOUR_USER/BirdSongs/Extracted
+	file_server browse
+	handle /By_Date/* {
+		file_server browse
+	}
+	handle /Charts/* {
+		file_server browse
+	}
+	reverse_proxy /stream localhost:8000
+	php_fastcgi unix//run/php/php8.4-fpm.sock {
+		try_files {path} {path}/index.html {path}/index.php index.php
+	}
+
+	# Don't let browsers or CDNs cache the HTML shell.
+	header / Cache-Control "no-cache, no-store, must-revalidate"
+	header *.html Cache-Control "no-cache, no-store, must-revalidate"
+
+	# Admin/tools password protection. The collage and public bird cards
+	# stay open; only the menu unlock and backend admin endpoints require
+	# the password.
+	@admin {
+		path /avian/api/menu.php
+		path /log*
+		path /stats*
+		path /terminal*
+	}
+	basic_auth @admin {
+		# Generate with: caddy hash-password --plaintext 'your-pass'
+		birdnet $2a$14$REPLACE_WITH_HASH_FROM_caddy_hash-password
+	}
+
+	reverse_proxy /log* localhost:8080
+	reverse_proxy /stats* localhost:8501
+	reverse_proxy /terminal* localhost:8888
+}

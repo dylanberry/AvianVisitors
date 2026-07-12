@@ -94,9 +94,13 @@ avian/                  # everything we add to BirdNET-Pi
 ├── scripts/            # generate -> cutout -> masks pipeline + prompt
 └── forwarding/         # optional HA / MQTT / Cloudflare configs
 frame/                  # optional e-ink wall display
+docs/deployment/        # deployment configs (Caddy, BirdNET-Pi settings)
+CONTEXT.md              # project context for the Toronto Pi build
 ```
 
 Everything outside `avian/` and `frame/` is upstream BirdNET-Pi.
+
+For the live Toronto deployment notes — hardware, network, detection tuning, image generation status, auth, and next steps — see [`CONTEXT.md`](CONTEXT.md).
 
 ---
 

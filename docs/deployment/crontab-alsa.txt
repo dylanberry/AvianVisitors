@@ -1,0 +1,10 @@
+# Add these lines with `crontab -e` so the USB mic settings persist across reboots.
+#
+# CARD 1 is the USB PnP audio device on this Pi; change -c 1 if your card
+# number is different (find it with `arecord -l`).
+#
+# Mic Capture Volume 16 = 100% (+23.81 dB) for this adapter.
+# Auto Gain Control is disabled because it causes noise/pumping.
+
+@reboot /usr/bin/amixer -c 1 sset Mic Capture 16 >/dev/null 2>&1
+@reboot /usr/bin/amixer -c 1 sset "Auto Gain Control" off >/dev/null 2>&1

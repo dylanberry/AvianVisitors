@@ -28,6 +28,8 @@ sudo systemctl restart cloudflared
 
 Add a password gate via Cloudflare Access (free for up to 50 users) or via Caddy basic_auth ([`caddy-auth.caddy`](caddy-auth.caddy)).
 
+> **Note:** if you use Caddy basic_auth, protect only the admin endpoints (`/avian/api/menu.php`, `/log*`, `/stats*`, `/terminal*`) — not the whole site. The front-end used to auto-probe `menu.php` on page load, which caused browsers to show a credentials dialog before the user even opened the menu. The latest `apt.js` disables that probe, and `caddy-auth.caddy` is set up to keep the live collage public while still locking the tools.
+
 ---
 
 ## 2. Home Assistant sensor

@@ -1,0 +1,20 @@
+# BirdNET-Pi config excerpt: values changed from defaults for the
+# Toronto AvianVisitors deployment.
+#
+# Replace LATITUDE/LONGITUDE with your own coordinates and add any API keys
+# you need. Only the non-default keys are shown here.
+
+LATITUDE=43.0000
+LONGITUDE=-79.0000
+
+# Detection tuning: lower confidence + max sensitivity + digital pre-gain
+# to catch quiet backyard birds. Accepts more false positives.
+CONFIDENCE=0.4
+SENSITIVITY=1.5
+AUDIO_GAIN=3.0
+
+# Keep the default 15-second recording length.
+RECORDING_LENGTH=15
+
+# Optional: disable Flickr if you don't have a key.
+FLICKR_API_KEY=
