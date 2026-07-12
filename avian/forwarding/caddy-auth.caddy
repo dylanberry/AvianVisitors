@@ -13,12 +13,16 @@
 (avian_basicauth) {
     @admin {
         path /avian/api/menu.php
+        path /avian/api/config.php
+        path /avian/api/birdnet-status.php
         path /log*
         path /stats*
         path /terminal*
     }
     basic_auth @admin {
         # username   bcrypt-hash
+        # Replace this hash with the output of:
+        #   caddy hash-password --plaintext 'your-pass'
         birdnet    $2a$14$REPLACE_WITH_HASH_FROM_caddy_hash-password
     }
 }
