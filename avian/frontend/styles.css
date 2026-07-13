@@ -214,7 +214,7 @@
     color: var(--ink-soft); letter-spacing: 0.04em;
   }
   .lock-err { color: var(--accent); }
-  /* Tiny "built by teddy" attribution - appears under the lock-screen
+  /* Tiny "built by Dylan" attribution - appears under the lock-screen
      password field AND at the foot of the about-card. Same monospace
      micro-type used by .lock-hint so the two contexts read consistent. */
   .built-by {
@@ -858,7 +858,7 @@
   }
   /* Mobile atlas: a compact 2-up grid instead of one giant card per row,
      so you can scan many birds and tap easily. Inline actions are hidden -
-     tapping the card opens the detail modal, which has play/wiki/ebird +
+     tapping the card opens the detail modal, which has play/wiki/ebird/merlin +
      recordings - making the whole card one big touch target. */
   @media (max-width: 700px) {
     /* minmax(0,1fr) lets the columns shrink below their content's intrinsic
@@ -1537,6 +1537,125 @@
     font: 11px/1.5 ui-serif, Georgia, serif; color: var(--ink-soft);
     text-align: center;
   }
+  .rec-flag {
+    background: var(--paper-2); border: 0;
+    color: var(--ink-soft); cursor: pointer;
+    width: 22px; height: 22px; border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: var(--raised);
+    padding: 0; margin: 0 0 0 8px;
+    vertical-align: middle;
+    transition: color 140ms ease, background 140ms ease, transform 160ms ease;
+  }
+  .rec-flag:hover { background: var(--paper-3); color: var(--accent-2); transform: translateY(-1px); }
+  .rec-flag svg { width: 11px; height: 11px; }
+  .rec-flag-menu {
+    display: none; grid-column: 1 / -1;
+    margin-top: 8px; padding: 8px;
+    background: var(--paper); color: var(--ink);
+    border-radius: 8px;
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,0.6),
+      0 8px 24px rgba(26,22,18,0.12);
+    gap: 6px;
+    flex-direction: column;
+  }
+  .rec-flag-menu[aria-hidden="false"] { display: flex; }
+  .rec-flag-menu .rec-flag-msg {
+    font: 10px ui-monospace, Menlo, monospace; color: var(--ink-2);
+    min-height: 14px; padding: 0 2px;
+  }
+  .rec-flag-action,
+  .rec-flag-submit {
+    background: var(--paper-2); border: 0; color: var(--ink);
+    padding: 7px 10px; border-radius: 4px;
+    font: 9.5px/1 ui-monospace, Menlo, monospace;
+    text-transform: lowercase; letter-spacing: 0.10em;
+    text-align: left; cursor: pointer;
+    box-shadow: var(--raised);
+    display: flex; align-items: center;
+    transition: transform 160ms ease, color 160ms ease, background 160ms ease;
+  }
+  .rec-flag-action:hover,
+  .rec-flag-submit:hover { background: var(--paper-3); color: var(--accent-2); transform: translateY(-1px); }
+  .rec-flag-reid {
+    display: none; gap: 6px; flex-direction: column;
+  }
+  .rec-flag-menu.rec-flag-reid-active .rec-flag-action { display: none; }
+  .rec-flag-menu.rec-flag-reid-active .rec-flag-reid { display: flex; }
+  .rec-flag-input {
+    flex: 1 1 auto;
+    background: var(--paper); border: 1px solid var(--hairline);
+    color: var(--ink); border-radius: 4px;
+    padding: 6px 8px;
+    font: 10px ui-monospace, Menlo, monospace;
+  }
+  .rec-flag-input:focus { outline: none; border-color: var(--accent); }
+  .rec-bulk {
+    display: none;
+    align-items: baseline;
+    gap: 8px;
+    position: relative;
+  }
+  .rec-bulk.show { display: inline-flex; }
+  .rec-bulk-btn {
+    background: var(--paper-2); border: 0;
+    color: var(--ink-soft); cursor: pointer;
+    padding: 5px 10px; border-radius: 4px;
+    font: 9px/1 ui-monospace, Menlo, monospace;
+    text-transform: lowercase; letter-spacing: 0.10em;
+    box-shadow: var(--raised);
+    transition: color 160ms ease, background 160ms ease;
+  }
+  .rec-bulk-btn:hover { color: var(--ink); background: var(--paper-3); }
+  .rec-bulk-menu {
+    display: none;
+    position: absolute; top: calc(100% + 6px); right: 0;
+    min-width: 230px;
+    margin-top: 0; padding: 8px;
+    background: var(--paper); color: var(--ink);
+    border-radius: 8px;
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,0.6),
+      0 8px 24px rgba(26,22,18,0.12);
+    gap: 6px;
+    flex-direction: column;
+    z-index: 5;
+  }
+  .rec-bulk-menu[aria-hidden="false"] { display: flex; }
+  .rec-bulk-menu .rec-bulk-msg {
+    font: 10px ui-monospace, Menlo, monospace; color: var(--ink-2);
+    min-height: 14px; padding: 0 2px;
+  }
+  .rec-bulk-action,
+  .rec-bulk-submit {
+    background: var(--paper-2); border: 0; color: var(--ink);
+    padding: 7px 10px; border-radius: 4px;
+    font: 9.5px/1 ui-monospace, Menlo, monospace;
+    text-transform: lowercase; letter-spacing: 0.10em;
+    text-align: left; cursor: pointer;
+    box-shadow: var(--raised);
+    display: flex; align-items: center;
+    transition: transform 160ms ease, color 160ms ease, background 160ms ease;
+  }
+  .rec-bulk-action:hover,
+  .rec-bulk-submit:hover { background: var(--paper-3); color: var(--accent-2); transform: translateY(-1px); }
+  .rec-bulk-reid {
+    display: none; gap: 6px; flex-direction: column;
+  }
+  .rec-bulk-menu.rec-bulk-reid-active .rec-bulk-action { display: none; }
+  .rec-bulk-menu.rec-bulk-reid-active .rec-bulk-reid { display: flex; }
+  .rec-bulk-input {
+    flex: 1 1 auto;
+    background: var(--paper); border: 1px solid var(--hairline);
+    color: var(--ink); border-radius: 4px;
+    padding: 6px 8px;
+    font: 10px ui-monospace, Menlo, monospace;
+  }
+  .rec-bulk-input:focus { outline: none; border-color: var(--accent); }
+  .rec-head-right {
+    display: flex; align-items: baseline; gap: 12px;
+  }
   .modal-actions {
     display: flex; gap: 8px; margin-top: 18px;
   }
@@ -1602,7 +1721,7 @@
   }
   .bird-card[data-playing="true"] .spectro-wrap::before { --playhead: 0.6; }
 
-/* ============ AvianVisitors mode toggle ============
+/* ============ Bird Up! mode toggle ============
  * Default install (body.av-local): hide the lock-row, show drawer items
  * directly when the menu opens. The PHP shim at /avian/api/menu.php
  * returns items immediately with no auth, so the live JS skips the lock

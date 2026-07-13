@@ -30,7 +30,7 @@ def _graphql(query, timeout):
     req = urllib.request.Request(
         BIRDWEATHER,
         data=json.dumps({"query": query}).encode(),
-        headers={"Content-Type": "application/json", "User-Agent": "AvianVisitors-frame/1.0"},
+        headers={"Content-Type": "application/json", "User-Agent": "BirdUp-frame/1.0"},
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -57,7 +57,7 @@ def geocode(zip_code, country="us", timeout=20):
     except Exception:
         store = {}
     url = f"{GEOCODER}/{country}/{urllib.parse.quote(zip_code)}"
-    req = urllib.request.Request(url, headers={"User-Agent": "AvianVisitors-frame/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "BirdUp-frame/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         place = json.loads(r.read(200_000))["places"][0]
     lat, lon = float(place["latitude"]), float(place["longitude"])
@@ -157,7 +157,7 @@ def ebird_nearby(lat, lon, days=14, key=None, timeout=20):
     if not key:
         return []
     url = f"{EBIRD}?lat={lat:.4f}&lng={lon:.4f}&dist=50&back={min(days, 30)}"
-    req = urllib.request.Request(url, headers={"X-eBirdApiToken": key, "User-Agent": "AvianVisitors-frame/1.0"})
+    req = urllib.request.Request(url, headers={"X-eBirdApiToken": key, "User-Agent": "BirdUp-frame/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             observations = json.loads(r.read(5_000_000))

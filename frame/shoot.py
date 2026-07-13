@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Screenshot the live AvianVisitors collage for the e-ink frame.
+"""Screenshot the live Bird Up! collage for the e-ink frame.
 
 Loads the real site (the LAN default http://birdnet.local, or a forwarded
 public URL) at a portrait viewport, hides the controls, sets the frame
 titles, and rewrites a few of the page's own apt.js tunables at capture time
 (cluster bias, count-to-size exponent, a rare-bird floor). The result is the
-actual website, framed for the wall, with no changes to AvianVisitors.
+actual website, framed for the wall, with no changes to Bird Up!.
 
 Needs a real headless browser, so it runs on any 64-bit capable machine,
 including the frame's own Pi (3 A+ / Zero 2 W) but NOT an original ARMv6
@@ -35,7 +35,7 @@ from playwright.sync_api import sync_playwright
 # the repo's raw GitHub URLs: a fresh install needs no illustration redeploy,
 # upstream additions arrive with a git pull, and cutouts you generate and copy
 # into the clone render even before they reach GitHub.
-RAW_ILLUSTRATIONS = ("https://raw.githubusercontent.com/Twarner491/AvianVisitors/"
+RAW_ILLUSTRATIONS = ("https://raw.githubusercontent.com/dylanberry/BirdUp/"
                      "avian-visitors/avian/assets/illustrations/")
 
 # Hide the controls and the other views, freeze animations. Titles + collage
@@ -257,13 +257,13 @@ def shoot_birdweather(out, species, *, title=None, subtitle=None, timeout_ms=450
                  ("empty_text", "no recent detections nearby")):
         look.setdefault(k, v)
     return shoot(f"http://127.0.0.1:{port}/", out,
-                 title=title or "Avian Visitors", subtitle=subtitle or "Heard Today",
+                 title=title or "Bird Up!", subtitle=subtitle or "Heard Today",
                  species=species, cutout_base=RAW_ILLUSTRATIONS, cutout_local=cutout_local,
                  timeout_ms=timeout_ms, **look)
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Screenshot the AvianVisitors collage for the e-ink frame.")
+    ap = argparse.ArgumentParser(description="Screenshot the Bird Up! collage for the e-ink frame.")
     ap.add_argument("--url", default="http://birdnet.local")
     ap.add_argument("--out", default="frame.png")
     ap.add_argument("--title")
@@ -320,7 +320,7 @@ def main():
             sys.exit(1)
         print(f"wrote {a.out}")
         return
-    # Mic path: screenshot the live AvianVisitors site at --url.
+    # Mic path: screenshot the live Bird Up! site at --url.
     count_exp = a.count_exp if a.count_exp is not None else 0.4
     headline_px = a.headline_px if a.headline_px is not None else 42
     eyebrow_px = a.eyebrow_px if a.eyebrow_px is not None else 18

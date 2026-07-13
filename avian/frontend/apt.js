@@ -56,7 +56,7 @@
   // Each view's title text. The shared static-head shows one of these
   // based on the current view; identical adjacent values mean the title
   // stays put with no fade (collage and stats both say Heard Recently).
-  var VIEW_TITLES = ['Heard Recently', 'Heard Recently', 'Avian Visitors'];
+  var VIEW_TITLES = ['Heard Recently', 'Heard Recently', 'Bird Up!'];
   var staticHead = document.querySelector('.static-head');
   var staticTitle = document.getElementById('staticTitle');
   function setTitleForView(i) {
@@ -1094,24 +1094,9 @@
   }
 
   // ---- Atlas: field-guide card grid ----
-  // eBird species codes for placeholder birds. eBird's URL scheme is
-  // https://ebird.org/species/<code>/, where <code> is a stable 6-char
-  // taxonomy code. Hardcoded here for the local-California demo set;
-  // a real implementation can look these up via the eBird taxon API.
-  var EBIRD_CODES = {
-    'Calypte anna':           'annhum',
-    'Passer domesticus':      'houspa',
-    'Haemorhous mexicanus':   'houfin',
-    'Turdus migratorius':     'amerob',
-    'Zenaida macroura':       'moudov',
-    'Spinus psaltria':        'lesgol',
-    'Zonotrichia leucophrys': 'whcspa',
-    'Aphelocoma californica': 'cascj1',
-    'Mimus polyglottos':      'normoc',
-    'Sayornis nigricans':     'blkpho',
-    'Larus occidentalis':     'wegull',
-    'Corvus brachyrhynchos':  'amecro'
-  };
+  // EBIRD_CODES is loaded from ebird-codes.js before apt.js.
+  // Merlin species pages use the same eBird taxonomy code:
+  // https://merlinbirds.org/species/<code>
 
   function wikiUrl(sci) {
     return 'https://en.wikipedia.org/wiki/' + encodeURIComponent(sci.replace(/ /g, '_'));
@@ -1119,6 +1104,10 @@
   function ebirdUrl(sci) {
     var code = EBIRD_CODES[sci];
     return code ? 'https://ebird.org/species/' + code : 'https://ebird.org/explore';
+  }
+  function merlinUrl(sci) {
+    var code = EBIRD_CODES[sci];
+    return code ? 'https://merlinbirds.org/species/' + code : 'https://merlinbirds.org';
   }
 
   // Tiny inline icons - monochrome, ink-only, match the page palette.
@@ -1209,8 +1198,9 @@
         +     '<button type="button" class="chip play" data-action="play" aria-label="play recording">'
         +       ICON_PLAY + '<span>play</span>'
         +     '</button>'
-        +     '<a class="chip ext" href="' + wikiUrl(s.sci) + '" target="_blank" rel="noopener" aria-label="Wikipedia">wiki</a>'
-        +     '<a class="chip ext" href="' + ebirdUrl(s.sci) + '" target="_blank" rel="noopener" aria-label="eBird">ebird</a>'
++     '<a class="chip ext" href="' + wikiUrl(s.sci) + '" target="_blank" rel="noopener" aria-label="Wikipedia">wiki</a>'
++     '<a class="chip ext" href="' + ebirdUrl(s.sci) + '" target="_blank" rel="noopener" aria-label="eBird">ebird</a>'
++     '<a class="chip ext" href="' + merlinUrl(s.sci) + '" target="_blank" rel="noopener" aria-label="Merlin">merlin</a>'
         +   '</div>'
         + '</article>';
     }).join('');
@@ -2082,8 +2072,9 @@
     document.getElementById('modalDesc').classList.add('placeholder');
     document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Loading recordings...</li>';
     document.getElementById('modalRecCount').textContent = '';
-    document.getElementById('modalWiki').href = wikiUrl(sci);
-    document.getElementById('modalEbird').href = ebirdUrl(sci);
+document.getElementById('modalWiki').href = wikiUrl(sci);
+document.getElementById('modalEbird').href = ebirdUrl(sci);
+document.getElementById('modalMerlin').href = merlinUrl(sci);
     // FLIP-style morph: scale + translate the modal-card from the
     // clicked atlas card's position to its natural centered size, so
     // the card *expands* into the detail view instead of just fading
@@ -2600,7 +2591,7 @@
         + '</div>';
     }
     html += deployCard('pull latest from github',
-      'fetches the newest AvianVisitors + BirdNET-Pi changes; the symlinks already in /BirdSongs/Extracted/ pick up new code on the next request.',
+      'fetches the newest Bird Up! + BirdNET-Pi changes; the symlinks already in /BirdSongs/Extracted/ pick up new code on the next request.',
       [
         'cd ~/BirdNET-Pi && git pull',
         '# substitute the right php-fpm unit if your debian ships a different version:',

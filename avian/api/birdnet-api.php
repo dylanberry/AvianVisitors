@@ -1,5 +1,5 @@
 <?php
-// AvianVisitors - JSON facade over BirdNET-Pi's birds.db. Read-only.
+// Bird Up! - JSON facade over BirdNET-Pi's birds.db. Read-only.
 // Symlinked into the BirdNET-Pi Caddy site root at /avian/api/.
 //
 // Endpoints (?action=...):
@@ -60,13 +60,13 @@ $action = $_GET['action'] ?? 'stats';
 switch ($action) {
 
     case 'stats': {
-        $total       = (int)(one($db, 'SELECT COUNT(*) AS n FROM detections')['n'] ?? 0);
-        $species     = (int)(one($db, 'SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections')['n'] ?? 0);
-        $today       = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date = DATE('now','localtime')")['n'] ?? 0);
-        $todaySpec   = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE Date = DATE('now','localtime')")['n'] ?? 0);
-        $lastHour    = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date = DATE('now','localtime') AND Time >= TIME('now','localtime','-1 hour')")['n'] ?? 0);
-        $week        = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date >= DATE('now','localtime','-7 day')")['n'] ?? 0);
-        $weekSpec    = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE Date >= DATE('now','localtime','-7 day')")['n'] ?? 0);
+        $total       = (int)(one($db, 'SELECT COUNT(*) AS n FROM detections WHERE Hidden != 1')['n'] ?? 0);
+        $species     = (int)(one($db, 'SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE Hidden != 1')['n'] ?? 0);
+        $today       = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date = DATE('now','localtime') AND Hidden != 1")['n'] ?? 0);
+        $todaySpec   = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE Date = DATE('now','localtime') AND Hidden != 1")['n'] ?? 0);
+        $lastHour    = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date = DATE('now','localtime') AND Time >= TIME('now','localtime','-1 hour') AND Hidden != 1")['n'] ?? 0);
+        $week        = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date >= DATE('now','localtime','-7 day') AND Hidden != 1")['n'] ?? 0);
+        $weekSpec    = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE Date >= DATE('now','localtime','-7 day') AND Hidden != 1")['n'] ?? 0);
         $first       = one($db, 'SELECT MIN(Date) AS d FROM detections');
         echo json_encode([
             'totals'    => ['detections' => $total, 'species' => $species],
@@ -85,7 +85,7 @@ switch ($action) {
         $rs = rows($db,
           "SELECT Sci_Name AS sci, Com_Name AS com, MIN(Date||' '||Time) AS first_seen, "
         . "       MAX(Date||' '||Time) AS last_seen, COUNT(*) AS n, MAX(Confidence) AS best_conf "
-        . "FROM detections GROUP BY Sci_Name ORDER BY first_seen ASC"
+        . "FROM detections WHERE Hidden != 1 GROUP BY Sci_Name ORDER BY first_seen ASC"
         );
         echo json_encode(['species' => $rs, 'as_of' => date('c')]);
         break;
@@ -102,7 +102,7 @@ switch ($action) {
           "SELECT Sci_Name AS sci, Com_Name AS com, COUNT(*) AS n, MAX(Confidence) AS best_conf, "
         . "       MAX(Date||' '||Time) AS last_seen "
         . "FROM detections "
-        . "WHERE (julianday('now','localtime') - julianday(Date||' '||Time)) * 24 <= :hrs "
+        . "WHERE (julianday('now','localtime') - julianday(Date||' '||Time)) * 24 <= :hrs AND Hidden != 1 "
         . "GROUP BY Sci_Name ORDER BY last_seen DESC",
           [':hrs' => $hours]
         );
@@ -111,7 +111,7 @@ switch ($action) {
             $best = one($db,
               "SELECT File_Name AS file, Date AS d, Time AS t, Confidence AS conf "
             . "FROM detections "
-            . "WHERE Sci_Name = :sn "
+            . "WHERE Sci_Name = :sn AND Hidden != 1 "
             . "AND (julianday('now','localtime') - julianday(Date||' '||Time)) * 24 <= :hrs "
             . "ORDER BY Confidence DESC LIMIT 1",
               [':sn' => $r['sci'], ':hrs' => $hours]
@@ -128,13 +128,13 @@ switch ($action) {
         if ($sci === '') { http_response_code(400); echo json_encode(['error' => 'sci= required']); break; }
         $detections = rows($db,
           "SELECT Date AS d, Time AS t, File_Name AS file, Confidence AS conf "
-        . "FROM detections WHERE Sci_Name = :sn ORDER BY Date DESC, Time DESC LIMIT 500",
+        . "FROM detections WHERE Sci_Name = :sn AND Hidden != 1 ORDER BY Date DESC, Time DESC LIMIT 500",
           [':sn' => $sci]
         );
         $summary = one($db,
           "SELECT Com_Name AS com, COUNT(*) AS total, MIN(Date||' '||Time) AS first_seen, "
         . "       MAX(Date||' '||Time) AS last_seen, MAX(Confidence) AS best_conf "
-        . "FROM detections WHERE Sci_Name = :sn",
+        . "FROM detections WHERE Sci_Name = :sn AND Hidden != 1",
           [':sn' => $sci]
         );
         echo json_encode(['sci' => $sci, 'summary' => $summary, 'detections' => $detections]);
@@ -151,13 +151,13 @@ switch ($action) {
         $daily = rows($db,
           "SELECT Date AS date, COUNT(*) AS detections, COUNT(DISTINCT Sci_Name) AS species "
         . "FROM detections "
-        . "WHERE Date >= DATE('now','localtime','-".($days - 1)." day') "
+        . "WHERE Date >= DATE('now','localtime','-".($days - 1)." day') AND Hidden != 1 "
         . "GROUP BY Date ORDER BY Date"
         );
         $by_hour = rows($db,
           "SELECT CAST(strftime('%H', Time) AS INT) AS hour, COUNT(*) AS detections "
         . "FROM detections "
-        . "WHERE Date >= DATE('now','localtime','-30 day') "
+        . "WHERE Date >= DATE('now','localtime','-30 day') AND Hidden != 1 "
         . "GROUP BY hour ORDER BY hour"
         );
         echo json_encode([
@@ -177,7 +177,7 @@ switch ($action) {
         $rs = rows($db,
           "SELECT Sci_Name AS sci, Com_Name AS com, MIN(Date||' '||Time) AS first_seen, "
         . "       COUNT(*) AS total "
-        . "FROM detections GROUP BY Sci_Name ORDER BY first_seen DESC LIMIT :lim",
+        . "FROM detections WHERE Hidden != 1 GROUP BY Sci_Name ORDER BY first_seen DESC LIMIT :lim",
           [':lim' => $limit]
         );
         echo json_encode(['species' => $rs, 'as_of' => date('c')]);

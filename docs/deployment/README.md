@@ -1,6 +1,6 @@
 # Deployment notes
 
-This folder collects the non-AvianVisitors configuration changes made for the
+This folder collects the non-Bird Up! configuration changes made for the
 Toronto Raspberry Pi 4 deployment.
 
 ## Files
@@ -24,6 +24,33 @@ Toronto Raspberry Pi 4 deployment.
 3. Merge the values from `birdnet.conf.example` into your `birdnet.conf`.
 4. Add the two `@reboot` lines from `crontab-alsa.txt` to the Pi user's crontab.
 
+## PHP-FPM permissions for corrections
+
+The `correction.php` admin endpoint can hide detections, reidentify them (moving audio/spectrogram files), and append species to `exclude_species_list.txt`. On the live Pi, PHP-FPM runs as the `caddy` user, so that user must have write access to:
+
+- `~/BirdNET-Pi/scripts/birds.db` — `hide` and `reidentify` update the `detections` table.
+- `~/BirdSongs/Extracted/By_Date/` — `reidentify` moves `.mp3` and `.png` files into the new species directory.
+- `~/BirdNET-Pi/exclude_species_list.txt` — `exclude` appends the requested species.
+
+Verify the permissions on the Pi:
+
+```bash
+ls -l ~/BirdNET-Pi/scripts/birds.db
+ls -ld ~/BirdSongs/Extracted/By_Date/
+ls -l ~/BirdNET-Pi/exclude_species_list.txt
+```
+
+If the `caddy` user cannot write them, adjust group ownership and group-write:
+
+```bash
+sudo chown :caddy ~/BirdNET-Pi/scripts/birds.db
+sudo chmod g+w ~/BirdNET-Pi/scripts/birds.db
+sudo chown -R :caddy ~/BirdSongs/Extracted/By_Date/
+sudo chmod -R g+w ~/BirdSongs/Extracted/By_Date/
+sudo chown :caddy ~/BirdNET-Pi/exclude_species_list.txt
+sudo chmod g+w ~/BirdNET-Pi/exclude_species_list.txt
+```
+
 ## Deploying updates from this workstation
 
 This repo is the source-of-truth copy for the Toronto Pi. After front-end or
@@ -31,6 +58,8 @@ auth changes, push the updated files to the live Pi:
 
 - `avian/frontend/index.html`
 - `avian/frontend/apt.js`
+- `avian/api/correction.php`
+- `avian/api/birdnet-api.php`
 - `docs/deployment/Caddyfile` (gitignored, contains the real bcrypt hash)
 - `avian/forwarding/caddy-auth.caddy` (if the admin path list changes)
 

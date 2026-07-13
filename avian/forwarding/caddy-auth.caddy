@@ -15,6 +15,7 @@
         path /avian/api/menu.php
         path /avian/api/config.php
         path /avian/api/birdnet-status.php
+        path /avian/api/correction.php
         path /log*
         path /stats*
         path /terminal*

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the AvianVisitors e-ink frame (display side) on a Raspberry Pi.
+# Install the Bird Up! e-ink frame (display side) on a Raspberry Pi.
 # Enables SPI + I2C, installs deps, makes a venv, installs the systemd timer.
 #
 # Three ways to feed the frame, pick one:
@@ -115,11 +115,11 @@ if [ -f "$CONFIG" ]; then
 elif [ "$MODE" = local ]; then
   cat > "$CONFIG" <<'CFG'
 # birdframe-mode: local
-# AvianVisitors frame, local mode: mirrors the BirdNET-Pi on your network.
+# Bird Up! frame, local mode: mirrors the BirdNET-Pi on your network.
 # This Pi screenshots birdnet.local itself, so there is nothing else to set up.
 base_url = "http://birdnet.local"
 shoot = true
-shoot_title = "Avian Visitors"
+shoot_title = "Bird Up!"
 shoot_subtitle = "Heard Today"
 rotate = 90          # flip to 270 if the frame hangs the other way up
 saturation = 0.6
@@ -133,7 +133,7 @@ elif [ "$MODE" = image ]; then
   # printf, not a heredoc: the URL is written literally, never shell-expanded.
   {
     printf '%s\n' '# birdframe-mode: image'
-    printf '%s\n' '# AvianVisitors frame, image mode: fetches a ready-made frame PNG.'
+    printf '%s\n' '# Bird Up! frame, image mode: fetches a ready-made frame PNG.'
     printf 'base_url = "%s"\n' "$BASE"
     printf 'image_url = "%s"\n' "$IMAGE_URL"
     printf '%s\n' 'shoot = false'
@@ -145,13 +145,13 @@ else
   # signature as the other modes - it only redraws when the local top birds change.
   {
     printf '%s\n' '# birdframe-mode: birdweather'
-    printf '%s\n' '# AvianVisitors frame, BirdWeather mode: renders the top birds near a ZIP.'
+    printf '%s\n' '# Bird Up! frame, BirdWeather mode: renders the top birds near a ZIP.'
     printf '%s\n' 'species_source = "birdweather"'
     printf 'zip = "%s"\n' "$ZIP"
     printf '%s\n' 'bw_days = 7          # BirdWeather lookback window, in days'
     printf '%s\n' 'bw_country = "us"    # geocoder country for the ZIP'
     printf '%s\n' 'shoot = true         # this Pi renders the collage'
-    printf '%s\n' 'shoot_title = "Avian Visitors"'
+    printf '%s\n' 'shoot_title = "Bird Up!"'
     printf '%s\n' 'shoot_subtitle = "Heard Today"'
     printf '%s\n' 'rotate = 90          # flip to 270 if the frame hangs the other way up'
     printf '%s\n' 'saturation = 0.6'
@@ -162,7 +162,7 @@ echo "5/5  Installing systemd service + timer..."
 # Every mode runs display.py against the config on the standard 15-minute timer;
 # only the config differs. display.py renders inline for local + birdweather and
 # pushes to the panel only when the birds change.
-sed "s|/home/monalisa/AvianVisitors/frame|$FRAME|g; s|/home/monalisa|$HOME|g; s|User=monalisa|User=$USER|" \
+sed "s|/home/monalisa/BirdUp/frame|$FRAME|g; s|/home/monalisa|$HOME|g; s|User=monalisa|User=$USER|" \
   systemd/birdframe.service | sudo tee /etc/systemd/system/birdframe.service >/dev/null
 # BirdWeather's remote-ZIP eBird fallback reads its key from the unit environment.
 if [ "$MODE" = birdweather ] && [ -n "$EBIRD_KEY" ]; then

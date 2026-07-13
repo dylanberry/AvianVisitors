@@ -1,4 +1,4 @@
-# AvianVisitors e-ink frame. install.sh writes this for you; edit to taste.
+# Bird Up! e-ink frame. install.sh writes this for you; edit to taste.
 # config.toml is gitignored. Nothing here is secret unless your whole site is
 # behind basic-auth (see the bottom). This file is the full reference.
 
@@ -25,7 +25,7 @@ shoot = true
 hours = 24             # window shown on the frame
 
 # --- Titles and look (used when this Pi renders, i.e. shoot = true) ----------
-shoot_title = "Avian Visitors"
+shoot_title = "Bird Up!"
 shoot_subtitle = "Heard Today"
 # shoot_headline_px = 42
 # shoot_eyebrow_px = 18
@@ -54,7 +54,7 @@ cache = "~/.birdframe"
 timeout = 45
 
 # --- Only if your WHOLE site is behind basic-auth ---------------------------
-# The AvianVisitors default leaves the collage and detection API public, so
+# The Bird Up! default leaves the collage and detection API public, so
 # usually leave these out.
 # basic_user = "monalisa"
 # basic_pass = "..."

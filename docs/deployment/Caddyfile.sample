@@ -1,4 +1,4 @@
-# Full Caddyfile template for a BirdNET-Pi + AvianVisitors deployment.
+# Full Caddyfile template for a BirdNET-Pi + Bird Up! deployment.
 # Keeps the live collage public; only the admin menu/tools are password-protected.
 #
 # 1. Generate a bcrypt hash for your admin username:
@@ -33,6 +33,7 @@ http:// {
 		path /avian/api/menu.php
 		path /avian/api/config.php
 		path /avian/api/birdnet-status.php
+		path /avian/api/correction.php
 		path /log*
 		path /stats*
 		path /terminal*

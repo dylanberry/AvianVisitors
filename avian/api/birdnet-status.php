@@ -1,5 +1,5 @@
 <?php
-// AvianVisitors - system / service / log JSON facade for the admin
+// Bird Up! - system / service / log JSON facade for the admin
 // overlay (settings/system/logs/tools sections). Fetched by the
 // frontend at /avian/api/birdnet-status.php?action=...
 //

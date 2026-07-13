@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy the latest AvianVisitors front-end + Caddy changes from this repo to
+# Deploy the latest Bird Up! front-end + Caddy changes from this repo to
 # the live Pi. Run from the repo root.
 #
 # This script needs a one-time, temporary passwordless sudoers entry on the
@@ -35,8 +35,16 @@ EOF
 fi
 
 echo "Copying front-end files..."
-scp -o BatchMode=yes avian/frontend/index.html avian/frontend/apt.js \
+scp -o BatchMode=yes avian/frontend/index.html avian/frontend/apt.js avian/frontend/styles.css avian/frontend/ebird-codes.js \
     "${PI_USER}@${PI_HOST}:${PI_AVIAN_DIR}/frontend/"
+
+echo "Ensuring web-root symlinks..."
+ssh -o BatchMode=yes "${PI_USER}@${PI_HOST}" \
+    'for f in index.html apt.js styles.css ebird-codes.js; do target="/home/dylanberry/BirdSongs/Extracted/$f"; src="/home/dylanberry/BirdNET-Pi/avian/frontend/$f"; [ -L "$target" ] || ln -s "$src" "$target"; done'
+
+echo "Copying API files..."
+scp -o BatchMode=yes avian/api/*.php \
+    "${PI_USER}@${PI_HOST}:${PI_AVIAN_DIR}/api/"
 
 echo "Copying Caddy auth snippet..."
 scp -o BatchMode=yes avian/forwarding/caddy-auth.caddy \
@@ -68,6 +76,7 @@ admin_urls=(
     "http://${PI_HOST}/avian/api/menu.php"
     "http://${PI_HOST}/avian/api/config.php"
     "http://${PI_HOST}/avian/api/birdnet-status.php"
+    "http://${PI_HOST}/avian/api/correction.php"
 )
 for url in "${admin_urls[@]}"; do
     code=$(curl -s -o /dev/null -w "%{http_code}" "$url")

@@ -1,4 +1,4 @@
-# AvianVisitors e-ink frame
+# Bird Up! e-ink frame
 
 *The last 24h of birds, framed on the wall by your window.*
 
@@ -48,8 +48,8 @@ Then install in Pi and power up.
 ```bash
 ssh <your-username>@birdpic.local
 sudo apt update && sudo apt install -y git
-git clone https://github.com/Twarner491/AvianVisitors
-cd AvianVisitors/frame
+git clone https://github.com/dylanberry/BirdUp
+cd BirdUp/frame
 ```
 
 Pick how the frame gets its birds:

@@ -1,10 +1,10 @@
-# AvianVisitors
+# Bird Up!
 
 *A live bird collage from your window.*
 
 See it running at [bird.onethreenine.net](https://bird.onethreenine.net).
 
-<img alt="avianvisitors collage" src="docs/thumb.png" />
+<img alt="Bird Up! collage" src="docs/thumb.png" />
 
 ---
 
@@ -47,10 +47,10 @@ Installer assumes passwordless sudo (Raspberry Pi OS Lite default - if you've ti
 
 ```bash
 ssh <your-username>@birdnet.local
-curl -s https://raw.githubusercontent.com/Twarner491/AvianVisitors/avian-visitors/newinstaller.sh | bash
+curl -s https://raw.githubusercontent.com/dylanberry/BirdUp/avian-visitors/newinstaller.sh | bash
 ```
 
-Clones this fork, installs BirdNET-Pi, symlinks the AvianVisitors overlay into the Caddy web root. Takes 20-40 minutes. Reboots when done.
+Clones this fork, installs BirdNET-Pi, symlinks the Bird Up! overlay into the Caddy web root. Takes 20-40 minutes. Reboots when done.
 
 Collage: `http://birdnet.local/`. Stock BirdNET-Pi UI: `http://birdnet.local/index.php`. The menu button in the top right opens an admin overlay with settings, system, log, and tool panels.
 
@@ -116,6 +116,6 @@ CC-BY-NC-SA-4.0, inherited from [BirdNET-Pi](https://github.com/Nachtzuster/Bird
 
 ---
 
-- [Fork this repository](https://github.com/Twarner491/AvianVisitors/fork)
-- [Watch this repo](https://github.com/Twarner491/AvianVisitors/subscription)
-- [Create issue](https://github.com/Twarner491/AvianVisitors/issues/new)
+- [Fork this repository](https://github.com/dylanberry/BirdUp/fork)
+- [Watch this repo](https://github.com/dylanberry/BirdUp/subscription)
+- [Create issue](https://github.com/dylanberry/BirdUp/issues/new)

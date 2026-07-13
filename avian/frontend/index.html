@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>your birds</title>
+<title>Bird Up!</title>
 <meta name="description" content="A live bird collage from your window.">
 <link rel="icon" type="image/png" href="./favicon.png">
 <link rel="apple-touch-icon" href="./favicon.png">
 <!-- Apply the saved theme before first paint so dark mode doesn't flash
      light on load. The full switcher lives in Settings (writes bird:theme). -->
 <script>try{if(localStorage.getItem('bird:theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
-<link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="./styles.css?v=r17">
 </head>
 <body>
 <!-- Pill in the top-left slot, only visible on admin overlays
@@ -44,7 +44,7 @@
     <p class="lock-hint" id="lockHint">enter password to unlock tools.</p>
   </div>
   <nav class="menu-items" id="dd-items"></nav>
-  <p class="built-by">built by <a href="https://theodore.net" target="_blank" rel="noopener">teddy</a> · <a href="https://github.com/Twarner491/AvianVisitors" target="_blank" rel="noopener">github</a></p>
+  <p class="built-by">built by <a href="https://dylanberry.com" target="_blank" rel="noopener">Dylan</a> · <a href="https://github.com/dylanberry/BirdUp" target="_blank" rel="noopener">github</a></p>
 </aside>
 
 <main class="stage">
@@ -170,7 +170,22 @@
     <div class="modal-recordings">
       <div class="rec-head">
         <h3>Recordings</h3>
-        <span class="rec-count" id="modalRecCount"></span>
+        <div class="rec-head-right">
+          <span class="rec-count" id="modalRecCount"></span>
+          <span class="rec-bulk" id="modalBulkActions">
+            <button class="rec-bulk-btn" type="button" aria-label="bulk actions">bulk actions</button>
+            <span class="rec-bulk-menu" aria-hidden="true">
+              <span class="rec-bulk-msg"></span>
+              <button class="rec-bulk-action" type="button" data-action="hide-all">Not a bird — hide all</button>
+              <button class="rec-bulk-action" type="button" data-action="reidentify-all">Wrong species — reidentify all...</button>
+              <button class="rec-bulk-action" type="button" data-action="exclude-all">Exclude species</button>
+              <span class="rec-bulk-reid" aria-hidden="true">
+                <input type="text" class="rec-bulk-input" placeholder="scientific name" aria-label="new scientific name" />
+                <button class="rec-bulk-submit" type="button" data-action="reidentify-all-submit">reidentify all</button>
+              </span>
+            </span>
+          </span>
+        </div>
       </div>
       <ol id="modalRecordings">
         <li class="rec-empty">Loading recordings...</li>
@@ -179,6 +194,7 @@
     <div class="modal-actions">
       <a id="modalWiki" class="chip ext" target="_blank" rel="noopener">wiki</a>
       <a id="modalEbird" class="chip ext" target="_blank" rel="noopener">ebird</a>
+      <a id="modalMerlin" class="chip ext" target="_blank" rel="noopener">merlin</a>
     </div>
   </article>
 </div>
@@ -202,7 +218,7 @@
 </nav>
 
 
-<!-- AvianVisitors: empty admin-screen stub. The live JS expects this
+<!-- Bird Up!: empty admin-screen stub. The live JS expects this
      element to exist (openAdmin/closeAdmin call setAttribute on it).
      Menu items navigate to BirdNET-Pi's stock pages instead of opening
      in-app admin views, so this stays empty. -->
@@ -214,6 +230,7 @@
 </section>
 
 <script>window.AV_AUTH_USER="birdnet";</script>
-<script src="./apt.js?v=r14"></script>
+<script src="./ebird-codes.js?v=r19"></script>
+<script src="./apt.js?v=r20"></script>
 </body>
 </html>

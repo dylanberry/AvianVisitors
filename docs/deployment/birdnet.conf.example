@@ -1,5 +1,5 @@
 # BirdNET-Pi config excerpt: values changed from defaults for the
-# Toronto AvianVisitors deployment.
+# Toronto Bird Up! deployment.
 #
 # Replace LATITUDE/LONGITUDE with your own coordinates and add any API keys
 # you need. Only the non-default keys are shown here.

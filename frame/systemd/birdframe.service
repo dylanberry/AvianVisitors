@@ -1,6 +1,6 @@
 [Unit]
-Description=AvianVisitors e-ink frame update
-Documentation=https://github.com/Twarner491/AvianVisitors
+Description=Bird Up! e-ink frame update
+Documentation=https://github.com/dylanberry/BirdUp
 Wants=network-online.target
 After=network-online.target
 
@@ -8,8 +8,8 @@ After=network-online.target
 # install.sh rewrites User= and the paths to match your install.
 Type=oneshot
 User=monalisa
-WorkingDirectory=/home/monalisa/AvianVisitors/frame
-ExecStart=/home/monalisa/AvianVisitors/frame/.venv/bin/python /home/monalisa/AvianVisitors/frame/display.py --config /home/monalisa/.birdframe/config.toml
+WorkingDirectory=/home/monalisa/BirdUp/frame
+ExecStart=/home/monalisa/BirdUp/frame/.venv/bin/python /home/monalisa/BirdUp/frame/display.py --config /home/monalisa/.birdframe/config.toml
 Environment=PYTHONUNBUFFERED=1
 Nice=10
 TimeoutStartSec=300
