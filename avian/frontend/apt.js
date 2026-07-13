@@ -13,6 +13,10 @@
   var IMG_VERSION = 'r13'; // Ontario additions (generated illustrations for Toronto-common birds)
                            // with clean cutouts, so drop every cached copy.
 
+  // Version for the optional Effin' Birds personality quotes. Bump whenever
+  // the roast JSON is regenerated or the prompt/template changes.
+  var PERSONALITY_VERSION = 'r3';
+
   // ---- Sliding pill helper ----
   // Each segmented control has a single .seg-pill element that we move via
   // transform/width to whichever button currently has aria-current="true".
@@ -110,6 +114,7 @@
   // can be invalidated by bumping the prefix.
   function readLS(k, fallback) { try { return localStorage.getItem(k) || fallback; } catch (e) { return fallback; } }
   function writeLS(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function effinEnabled() { return readLS('bird:effin', 'false') === 'true'; }
 
   // ---- Single-audio coordinator ----
   // Only one source plays at a time across the whole app: atlas-card
@@ -876,6 +881,35 @@
   function fetchJson(url) {
     return fetch(url, { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
+  }
+
+  function loadPersonality() {
+    if (PERSONALITY) return Promise.resolve(PERSONALITY);
+    if (personalityPromise) return personalityPromise;
+    personalityPromise = fetchJson('./personality.json?v=' + PERSONALITY_VERSION)
+      .then(function (j) { PERSONALITY = j || {}; return PERSONALITY; })
+      .catch(function () { PERSONALITY = {}; return PERSONALITY; });
+    return personalityPromise;
+  }
+
+  function renderModalEffin(sci) {
+    var el = document.getElementById('modalEffin');
+    if (!el) return;
+    loadPersonality().then(function (map) {
+      var currentSci = (document.getElementById('modalSci').textContent || '').trim();
+      if (currentSci === sci && effinEnabled()) {
+        var quote = map && map[sci];
+        if (quote && typeof quote === 'string' && quote.trim()) {
+          el.textContent = quote.trim();
+          el.classList.add('visible');
+          el.setAttribute('aria-hidden', 'false');
+          return;
+        }
+      }
+      el.textContent = '';
+      el.classList.remove('visible');
+      el.setAttribute('aria-hidden', 'true');
+    });
   }
 
   function backfillDaily(daily, days) {
@@ -1798,9 +1832,20 @@
       + '  <div class="seg" data-theme-seg>' + btn('light', 'light') + btn('dark', 'dark') + '</div>'
       + '</div>';
   }
+  // Client-side Effin' Birds roast toggle. Tagged data-effin-switch so
+  // wireSettingsControls skips it - it is client-side only and not part of
+  // the Pi config save flow.
+  function effinRow() {
+    var on = readLS('bird:effin', 'false') === 'true';
+    return ''
+      + '<div class="menu-row">'
+      + '  <div><span class="label">Effin\' Birds roasts</span><span class="hint">saved on this device</span></div>'
+      + '  <button type="button" class="switch" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" data-effin-switch></button>'
+      + '</div>';
+  }
   function wireSettingsControls(scope) {
     scope = scope || document;
-    scope.querySelectorAll('.switch').forEach(function (sw) {
+    scope.querySelectorAll('.switch:not([data-effin-switch])').forEach(function (sw) {
       sw.addEventListener('click', function () {
         var on = sw.getAttribute('aria-checked') !== 'true';
         sw.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -1888,6 +1933,8 @@
   // tunnel; one fetch per session is plenty.
   var SPECIES_CACHE = {};
   var WIKI_CACHE = {};
+  var PERSONALITY = null;
+  var personalityPromise = null;
   var modalAudio = null;
   var modalRecBtn = null;
   function fmtRecTime(d, t) {
@@ -2052,6 +2099,7 @@
       syncPill(poseToggle);
     });
     document.getElementById('modalSci').textContent = sci;
+    renderModalEffin(sci);
     document.getElementById('modalGenus').textContent = (sci.split(' ')[0] || '-');
     document.getElementById('modalCommon').textContent = '-';
     document.getElementById('modalAllTime').textContent = '-';
@@ -2070,6 +2118,10 @@
     document.getElementById('modalRarity').classList.remove('rare');
     document.getElementById('modalDesc').textContent = 'Loading description...';
     document.getElementById('modalDesc').classList.add('placeholder');
+    var effinEl = document.getElementById('modalEffin');
+    effinEl.textContent = '';
+    effinEl.classList.remove('visible');
+    effinEl.setAttribute('aria-hidden', 'true');
     document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Loading recordings...</li>';
     document.getElementById('modalRecCount').textContent = '';
 document.getElementById('modalWiki').href = wikiUrl(sci);
@@ -2147,6 +2199,10 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
   function closeDetailModal() {
     var modal = document.getElementById('detail-modal');
     stopModalAudio();
+    var effinEl = document.getElementById('modalEffin');
+    effinEl.textContent = '';
+    effinEl.classList.remove('visible');
+    effinEl.setAttribute('aria-hidden', 'true');
     // Reverse-morph back into the source atlas card so the modal
     // appears to *retract* to where it came from. Look the card up
     // fresh - the user may have switched the time window or sort
@@ -2371,6 +2427,7 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
         adminBody.innerHTML =
           '<div class="admin-settings">'
           + themeRow()
+          + effinRow()
           + settingsToggle('preserve', 'Preserve all recordings', "don't auto-delete", preserve)
           + settingsSlider('CONFIDENCE',  'Confidence threshold', 'min score to log a detection', v.CONFIDENCE,  0.1, 0.95, 0.05, 2)
           + settingsSlider('SENSITIVITY', 'Sensitivity',          'analyzer sensitivity',          v.SENSITIVITY, 0.5, 1.5,  0.05, 2)
@@ -2397,6 +2454,19 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
             x.setAttribute('aria-current', x === b ? 'true' : 'false');
           });
         });
+        // Effin' Birds roast toggle: client-side only, updates any open modal.
+        var effinSwitch = adminBody.querySelector('[data-effin-switch]');
+        if (effinSwitch) {
+          effinSwitch.addEventListener('click', function () {
+            var on = effinSwitch.getAttribute('aria-checked') !== 'true';
+            effinSwitch.setAttribute('aria-checked', on ? 'true' : 'false');
+            writeLS('bird:effin', on ? 'true' : 'false');
+            var modal = document.getElementById('detail-modal');
+            if (modal && modal.getAttribute('aria-hidden') === 'false') {
+              renderModalEffin((document.getElementById('modalSci').textContent || '').trim());
+            }
+          });
+        }
         var saveBtn = document.getElementById('saveBtn');
         if (saveBtn) saveBtn.addEventListener('click', saveSettings);
       })

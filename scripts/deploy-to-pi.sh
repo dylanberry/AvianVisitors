@@ -35,12 +35,12 @@ EOF
 fi
 
 echo "Copying front-end files..."
-scp -o BatchMode=yes avian/frontend/index.html avian/frontend/apt.js avian/frontend/styles.css avian/frontend/ebird-codes.js \
+scp -o BatchMode=yes avian/frontend/index.html avian/frontend/apt.js avian/frontend/styles.css avian/frontend/ebird-codes.js avian/frontend/personality.json \
     "${PI_USER}@${PI_HOST}:${PI_AVIAN_DIR}/frontend/"
 
 echo "Ensuring web-root symlinks..."
 ssh -o BatchMode=yes "${PI_USER}@${PI_HOST}" \
-    'for f in index.html apt.js styles.css ebird-codes.js; do target="/home/dylanberry/BirdSongs/Extracted/$f"; src="/home/dylanberry/BirdNET-Pi/avian/frontend/$f"; [ -L "$target" ] || ln -s "$src" "$target"; done'
+    'for f in index.html apt.js styles.css ebird-codes.js personality.json; do target="/home/dylanberry/BirdSongs/Extracted/$f"; src="/home/dylanberry/BirdNET-Pi/avian/frontend/$f"; [ -L "$target" ] || ln -s "$src" "$target"; done'
 
 echo "Copying API files..."
 scp -o BatchMode=yes avian/api/*.php \
