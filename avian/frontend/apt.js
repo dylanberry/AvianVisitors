@@ -15,7 +15,7 @@
 
   // Version for the optional Effin' Birds personality quotes. Bump whenever
   // the roast JSON is regenerated or the prompt/template changes.
-  var PERSONALITY_VERSION = 'r3';
+  var PERSONALITY_VERSION = 'r6';
 
   // ---- Sliding pill helper ----
   // Each segmented control has a single .seg-pill element that we move via
@@ -1147,6 +1147,7 @@
   // Tiny inline icons - monochrome, ink-only, match the page palette.
   var ICON_PLAY = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L10 6 L3 10 Z"/></svg>';
   var ICON_PAUSE = '<svg viewBox="0 0 12 12" fill="currentColor"><rect x="3" y="2" width="2.5" height="8"/><rect x="6.5" y="2" width="2.5" height="8"/></svg>';
+  var ICON_FLAG = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M2 2 L2 10 M2 2 L10 2 L7 5 L10 8 L2 8 Z"/></svg>';
 
   function renderAtlas(animate) {
     var grid = document.getElementById('atlasGrid');
@@ -1540,6 +1541,7 @@
   function renderMenu(menu) {
     locked.style.display = 'none';
     items.classList.add('show');
+    updateAuthUI();
     var liveAudioIcon = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L10 6 L3 10 Z"/></svg>';
     var stopIcon = '<svg viewBox="0 0 12 12" fill="currentColor"><rect x="3" y="3" width="6" height="6"/></svg>';
     var specOnIcon = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 9 L4 5 L6 8 L8 3 L10 7"/></svg>';
@@ -1832,20 +1834,26 @@
       + '  <div class="seg" data-theme-seg>' + btn('light', 'light') + btn('dark', 'dark') + '</div>'
       + '</div>';
   }
-  // Client-side Effin' Birds roast toggle. Tagged data-effin-switch so
-  // wireSettingsControls skips it - it is client-side only and not part of
-  // the Pi config save flow.
-  function effinRow() {
-    var on = readLS('bird:effin', 'false') === 'true';
-    return ''
-      + '<div class="menu-row">'
-      + '  <div><span class="label">Effin\' Birds roasts</span><span class="hint">saved on this device</span></div>'
-      + '  <button type="button" class="switch" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" data-effin-switch></button>'
-      + '</div>';
+  // Public Effin' Birds roast toggle in the menu drawer. Persisted per-device.
+  function wirePublicEffinToggle() {
+    var sw = document.getElementById('publicEffinSwitch');
+    if (!sw || sw.__effinWired) return;
+    sw.__effinWired = true;
+    sw.setAttribute('aria-checked', effinEnabled() ? 'true' : 'false');
+    sw.addEventListener('click', function () {
+      var on = sw.getAttribute('aria-checked') !== 'true';
+      sw.setAttribute('aria-checked', on ? 'true' : 'false');
+      writeLS('bird:effin', on ? 'true' : 'false');
+      var modal = document.getElementById('detail-modal');
+      if (modal && modal.getAttribute('aria-hidden') === 'false') {
+        renderModalEffin((document.getElementById('modalSci').textContent || '').trim());
+      }
+    });
   }
+  wirePublicEffinToggle();
   function wireSettingsControls(scope) {
     scope = scope || document;
-    scope.querySelectorAll('.switch:not([data-effin-switch])').forEach(function (sw) {
+    scope.querySelectorAll('.switch').forEach(function (sw) {
       sw.addEventListener('click', function () {
         var on = sw.getAttribute('aria-checked') !== 'true';
         sw.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -2139,6 +2147,7 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
       : null;
     modal.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
+    updateAuthUI();
     morphModalOpen(modal.querySelector('.modal-card'), sourceCard);
 
     // Species detail (lifelist row + every detection).
@@ -2166,7 +2175,19 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
             return '<li class="rec-row" data-file="' + (d.file || '') + '" data-date="' + (d.d || '') + '">'
               + '<button class="play" type="button" aria-label="play">' + ICON_PLAY + '</button>'
               + '<span class="when">' + fmtRecTime(d.d, d.t) + '<small>' + fmtDateLine(d.d, d.t) + '</small></span>'
-              + '<span class="conf">' + ((+d.conf || 0) * 100).toFixed(0) + '%</span>'
+              + '<span class="conf">' + ((+d.conf || 0) * 100).toFixed(0) + '%'
+              +   '<button class="rec-flag" type="button" aria-label="flag" data-action="flag">' + ICON_FLAG + '</button>'
+              + '</span>'
+              + '<div class="rec-flag-menu" aria-hidden="true">'
+              +   '<span class="rec-flag-msg"></span>'
+              +   '<button class="rec-flag-action" type="button" data-action="hide">Not a bird — hide</button>'
+              +   '<button class="rec-flag-action" type="button" data-action="reidentify">Wrong species — reidentify</button>'
+              +   '<button class="rec-flag-action" type="button" data-action="exclude">Exclude species</button>'
+              +   '<span class="rec-flag-reid" aria-hidden="true">'
+              +     '<input type="text" class="rec-flag-input" placeholder="scientific name" aria-label="new scientific name" />'
+              +     '<button class="rec-flag-submit" type="button" data-action="reidentify-submit">reidentify</button>'
+              +   '</span>'
+              + '</div>'
               + '<div class="rec-spectro" aria-hidden="true">'
               +   '<div class="rec-spectro-loading">loading spectrogram...</div>'
               +   '<div class="rec-spectro-played"></div>'
@@ -2216,6 +2237,181 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
       document.body.style.overflow = '';
     });
   }
+
+  // ---- Bulk + per-recording correction controls in the species detail modal ----
+  // The controls are visible to all users, but the POST to correction.php
+  // requires the admin Basic credentials cached when the menu is unlocked.
+  // runCorrection() checks isMenuUnlocked() and shows an auth hint if not.
+  var modalBulkActions = document.getElementById('modalBulkActions');
+  var modalBulkMenu = modalBulkActions ? modalBulkActions.querySelector('.rec-bulk-menu') : null;
+  var modalBulkMsg = modalBulkMenu ? modalBulkMenu.querySelector('.rec-bulk-msg') : null;
+
+  function isMenuUnlocked() {
+    if (items && items.classList.contains('show')) return true;
+    var locked = document.getElementById('dd-locked');
+    return locked && getComputedStyle(locked).display === 'none';
+  }
+  function syncBulkActionsVisibility() {
+    if (!modalBulkActions) return;
+    modalBulkActions.classList.toggle('show', isMenuUnlocked());
+  }
+  function updateAuthUI() {
+    syncBulkActionsVisibility();
+    document.body.classList.toggle('av-authenticated', isMenuUnlocked());
+  }
+  function setMsg(el, msg, isErr) {
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.color = isErr ? 'var(--accent)' : '';
+  }
+  function closeBulkMenu() {
+    if (!modalBulkMenu) return;
+    modalBulkMenu.setAttribute('aria-hidden', 'true');
+    modalBulkMenu.classList.remove('rec-bulk-reid-active');
+    var input = modalBulkMenu.querySelector('.rec-bulk-input');
+    if (input) input.value = '';
+    setMsg(modalBulkMsg, '');
+  }
+  function closeFlagMenu(row) {
+    var menu = row.querySelector('.rec-flag-menu');
+    if (!menu) return;
+    menu.setAttribute('aria-hidden', 'true');
+    menu.classList.remove('rec-flag-reid-active');
+    var input = menu.querySelector('.rec-flag-input');
+    if (input) input.value = '';
+    setMsg(menu.querySelector('.rec-flag-msg'), '');
+  }
+
+  function postCorrection(action, sci, label, file, date) {
+    var body = { action: action };
+    if (sci) body.sci = sci;
+    if (label) body.label = label;
+    if (file) body.file = file;
+    if (date) body.date = date;
+    return fetch('./avian/api/correction.php', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }
+
+  function refreshAfterCorrection() {
+    SPECIES_CACHE = {};
+    WIKI_CACHE = {};
+    refreshAll();
+  }
+
+  function runCorrection(opts) {
+    if (!isMenuUnlocked()) {
+      setMsg(opts.msgEl, 'unlock the menu to make corrections', true);
+      return;
+    }
+    setMsg(opts.msgEl, opts.loadingText || 'saving...');
+    opts.btn.disabled = true;
+    postCorrection(opts.action, opts.sci, opts.label, opts.file, opts.date)
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        opts.btn.disabled = false;
+        if (res.ok && res.j.ok) {
+          opts.onSuccess();
+        } else {
+          setMsg(opts.msgEl, res.j.error || 'failed', true);
+        }
+      })
+      .catch(function () {
+        opts.btn.disabled = false;
+        setMsg(opts.msgEl, 'network error', true);
+      });
+  }
+
+  if (modalBulkActions) {
+    modalBulkActions.addEventListener('click', function (ev) {
+      var btn = ev.target.closest('button');
+      if (!btn) return;
+
+      if (btn.classList.contains('rec-bulk-btn')) {
+        var open = modalBulkMenu.getAttribute('aria-hidden') === 'false';
+        if (open) closeBulkMenu();
+        else modalBulkMenu.setAttribute('aria-hidden', 'false');
+        ev.stopPropagation();
+        return;
+      }
+
+      var action = btn.dataset.action;
+      var sci = (document.getElementById('modalSci').textContent || '').trim();
+
+      if (action === 'reidentify-all') {
+        modalBulkMenu.classList.add('rec-bulk-reid-active');
+        var input = modalBulkMenu.querySelector('.rec-bulk-input');
+        if (input) input.focus();
+        ev.stopPropagation();
+        return;
+      }
+
+      if (action === 'reidentify-all-submit') {
+        var input = modalBulkMenu.querySelector('.rec-bulk-input');
+        var label = input ? input.value.trim() : '';
+        if (!label) { setMsg(modalBulkMsg, 'enter a scientific name', true); return; }
+        if (!sci) { setMsg(modalBulkMsg, 'no species selected', true); return; }
+        runCorrection({
+          action: 'reidentify_all', sci: sci, label: label,
+          btn: btn, msgEl: modalBulkMsg, loadingText: 'reidentifying...',
+          onSuccess: function () {
+            closeBulkMenu();
+            closeDetailModal();
+            refreshAfterCorrection();
+          }
+        });
+        ev.stopPropagation();
+        return;
+      }
+
+      if (action === 'hide-all') {
+        if (!sci) { setMsg(modalBulkMsg, 'no species selected', true); return; }
+        if (!window.confirm('Hide every visible detection of ' + sci + '?')) return;
+        runCorrection({
+          action: 'hide_all', sci: sci,
+          btn: btn, msgEl: modalBulkMsg, loadingText: 'hiding...',
+          onSuccess: function () {
+            closeBulkMenu();
+            closeDetailModal();
+            refreshAfterCorrection();
+          }
+        });
+        ev.stopPropagation();
+        return;
+      }
+
+      if (action === 'exclude-all') {
+        if (!sci) { setMsg(modalBulkMsg, 'no species selected', true); return; }
+        if (!window.confirm('Exclude ' + sci + ' from future detections?')) return;
+        runCorrection({
+          action: 'exclude_all', sci: sci,
+          btn: btn, msgEl: modalBulkMsg, loadingText: 'excluding...',
+          onSuccess: function () {
+            closeBulkMenu();
+            closeDetailModal();
+            refreshAfterCorrection();
+          }
+        });
+        ev.stopPropagation();
+        return;
+      }
+    });
+
+    document.addEventListener('click', function (ev) {
+      if (!modalBulkActions.contains(ev.target)) closeBulkMenu();
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var openMenu = document.querySelector('.rec-flag-menu[aria-hidden="false"]');
+    if (!openMenu) return;
+    var row = openMenu.closest('.rec-row');
+    if (row && row.contains(ev.target)) return;
+    closeFlagMenu(row);
+  });
 
   // Shared-element morph: the modal-card scales+translates from the
   // clicked atlas card's exact rect to its natural centred rect, so the
@@ -2427,7 +2623,6 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
         adminBody.innerHTML =
           '<div class="admin-settings">'
           + themeRow()
-          + effinRow()
           + settingsToggle('preserve', 'Preserve all recordings', "don't auto-delete", preserve)
           + settingsSlider('CONFIDENCE',  'Confidence threshold', 'min score to log a detection', v.CONFIDENCE,  0.1, 0.95, 0.05, 2)
           + settingsSlider('SENSITIVITY', 'Sensitivity',          'analyzer sensitivity',          v.SENSITIVITY, 0.5, 1.5,  0.05, 2)
@@ -2454,19 +2649,6 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
             x.setAttribute('aria-current', x === b ? 'true' : 'false');
           });
         });
-        // Effin' Birds roast toggle: client-side only, updates any open modal.
-        var effinSwitch = adminBody.querySelector('[data-effin-switch]');
-        if (effinSwitch) {
-          effinSwitch.addEventListener('click', function () {
-            var on = effinSwitch.getAttribute('aria-checked') !== 'true';
-            effinSwitch.setAttribute('aria-checked', on ? 'true' : 'false');
-            writeLS('bird:effin', on ? 'true' : 'false');
-            var modal = document.getElementById('detail-modal');
-            if (modal && modal.getAttribute('aria-hidden') === 'false') {
-              renderModalEffin((document.getElementById('modalSci').textContent || '').trim());
-            }
-          });
-        }
         var saveBtn = document.getElementById('saveBtn');
         if (saveBtn) saveBtn.addEventListener('click', saveSettings);
       })
@@ -2996,6 +3178,95 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     if (!ev.target.closest) return;
     // Scrub-region clicks are handled by the mousedown wiring below.
     if (ev.target.closest('.rec-spectro-scrub')) return;
+
+    var flagBtn = ev.target.closest('.rec-flag');
+    if (flagBtn) {
+      var row = flagBtn.closest('.rec-row');
+      var menu = row.querySelector('.rec-flag-menu');
+      var open = menu.getAttribute('aria-hidden') === 'false';
+      if (open) {
+        closeFlagMenu(row);
+      } else {
+        var parent = row.parentElement;
+        if (parent) {
+          parent.querySelectorAll('.rec-flag-menu[aria-hidden="false"]').forEach(function (m) {
+            closeFlagMenu(m.closest('.rec-row'));
+          });
+        }
+        menu.setAttribute('aria-hidden', 'false');
+      }
+      ev.stopPropagation();
+      return;
+    }
+
+    var actionBtn = ev.target.closest('.rec-flag-action, .rec-flag-submit');
+    if (actionBtn) {
+      var row = actionBtn.closest('.rec-row');
+      var menu = row.querySelector('.rec-flag-menu');
+      var msgEl = menu.querySelector('.rec-flag-msg');
+      var sci = (document.getElementById('modalSci').textContent || '').trim();
+      var file = row.dataset.file;
+      var date = row.dataset.date;
+      var action = actionBtn.dataset.action;
+
+      if (action === 'reidentify') {
+        menu.classList.add('rec-flag-reid-active');
+        var input = menu.querySelector('.rec-flag-input');
+        if (input) input.focus();
+        ev.stopPropagation();
+        return;
+      }
+
+      if (action === 'reidentify-submit') {
+        var input = menu.querySelector('.rec-flag-input');
+        var label = input ? input.value.trim() : '';
+        if (!label) { setMsg(msgEl, 'enter a scientific name', true); return; }
+        if (!file || !date) { setMsg(msgEl, 'missing recording info', true); return; }
+        runCorrection({
+          action: 'reidentify', sci: sci, label: label, file: file, date: date,
+          btn: actionBtn, msgEl: msgEl, loadingText: 'reidentifying...',
+          onSuccess: function () {
+            closeFlagMenu(row);
+            row.classList.add('expanded');
+            ensureSpectroImage(row);
+            refreshAfterCorrection();
+          }
+        });
+        ev.stopPropagation();
+        return;
+      }
+
+      if (action === 'hide') {
+        if (!file || !date) { setMsg(msgEl, 'missing recording info', true); return; }
+        if (!window.confirm('Hide this detection?')) return;
+        runCorrection({
+          action: 'hide', file: file, date: date,
+          btn: actionBtn, msgEl: msgEl, loadingText: 'hiding...',
+          onSuccess: function () {
+            closeFlagMenu(row);
+            row.parentElement.removeChild(row);
+            refreshAfterCorrection();
+          }
+        });
+        ev.stopPropagation();
+        return;
+      }
+
+      if (action === 'exclude') {
+        if (!sci) { setMsg(msgEl, 'no species selected', true); return; }
+        if (!window.confirm('Exclude ' + sci + ' from future detections?')) return;
+        runCorrection({
+          action: 'exclude', label: sci,
+          btn: actionBtn, msgEl: msgEl, loadingText: 'excluding...',
+          onSuccess: function () {
+            closeFlagMenu(row);
+            refreshAfterCorrection();
+          }
+        });
+        ev.stopPropagation();
+        return;
+      }
+    }
 
     var playBtn = ev.target.closest('.play');
     if (playBtn) {
