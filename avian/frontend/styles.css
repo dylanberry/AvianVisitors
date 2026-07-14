@@ -132,6 +132,9 @@
   }
   .menu-btn:hover { transform: translateY(-1px); }
   .menu-btn:active { transform: translateY(0); }
+  .top-right {
+    display: inline-flex; align-items: center; gap: 12px;
+  }
   /* Compact top bar on mobile - the time-window pill goes from
      spacious to thumb-tight without losing legibility. */
   @media (max-width: 700px) {
@@ -141,6 +144,7 @@
       font-size: 8.5px; padding: 6px 10px; letter-spacing: 0.12em;
     }
     .menu-btn { font-size: 9px; padding: 6px 11px 5px; letter-spacing: 0.14em; }
+    .top-right { gap: 8px; }
     .return-to-atlas { top: 10px; left: 10px; padding: 5px 10px; font-size: 8.5px; }
   }
   @media (max-width: 420px) {
@@ -449,6 +453,10 @@
     min-height: 13px;
   }
   .live-status.err { color: #a83a2d; }
+  .effin-row {
+    border-bottom: 1px solid var(--hairline);
+    margin-bottom: 4px;
+  }
   .menu-links a .l-hint {
     display: block; font: 8.5px ui-serif, Georgia, serif; text-transform: none;
     letter-spacing: 0; color: var(--ink-soft); margin-top: 2px;
@@ -1401,7 +1409,7 @@
   .modal-meta .v.rare { color: var(--accent-2); }
 
   /* Effin' Birds quote - an on-brand aside inside the modal info panel.
-     Hidden by default; Todo 6 toggles .visible to reveal it. */
+     Hidden by default; the public toggle in the top bar reveals it. */
   .effin-quote {
     display: none;
     margin: 18px 0 14px;
@@ -1565,12 +1573,13 @@
     background: var(--paper-2); border: 0;
     color: var(--ink-soft); cursor: pointer;
     width: 22px; height: 22px; border-radius: 999px;
-    display: inline-flex; align-items: center; justify-content: center;
+    display: none; align-items: center; justify-content: center;
     box-shadow: var(--raised);
     padding: 0; margin: 0 0 0 8px;
     vertical-align: middle;
     transition: color 140ms ease, background 140ms ease, transform 160ms ease;
   }
+  body.av-authenticated .rec-flag { display: inline-flex; }
   .rec-flag:hover { background: var(--paper-3); color: var(--accent-2); transform: translateY(-1px); }
   .rec-flag svg { width: 11px; height: 11px; }
   .rec-flag-menu {
