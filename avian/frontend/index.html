@@ -10,7 +10,7 @@
 <!-- Apply the saved theme before first paint so dark mode doesn't flash
      light on load. The full switcher lives in Settings (writes bird:theme). -->
 <script>try{if(localStorage.getItem('bird:theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
-<link rel="stylesheet" href="./styles.css?v=r17">
+<link rel="stylesheet" href="./styles.css?v=r19">
 </head>
 <body>
 <!-- Pill in the top-left slot, only visible on admin overlays
@@ -32,10 +32,19 @@
     <button data-h="168" type="button">7D</button>
     <button data-h="1000000" type="button">ALL</button>
   </div>
-  <button class="menu-btn" id="menuBtn">menu</button>
+  <div class="top-right">
+    <button class="menu-btn" id="menuBtn">menu</button>
+  </div>
 </header>
 
 <aside id="menu-dd" aria-hidden="true">
+  <div class="menu-row effin-row" id="effinRow">
+    <div>
+      <span class="label">Effin' Birds roasts</span>
+      <span class="hint">roast quotes in detail cards</span>
+    </div>
+    <button type="button" class="switch" role="switch" aria-label="Effin' Birds roasts" id="publicEffinSwitch"></button>
+  </div>
   <div id="dd-locked">
     <form class="lock-row" id="unlockForm">
       <input id="lockPass" type="password" placeholder="password" autocomplete="current-password">
@@ -161,7 +170,7 @@
           <div><span class="n" id="modalFirstSeen">-</span><span class="lbl">first heard</span></div>
         </div>
         <p class="desc placeholder" id="modalDesc">Loading description...</p>
-        <!-- Effin' Birds roast, shown only when admin toggle is on -->
+        <!-- Effin' Birds roast, shown only when the public toggle is on -->
         <div id="modalEffin" class="effin-quote" aria-hidden="true"></div>
         <div class="modal-meta">
           <span class="meta-item"><span class="k">genus</span><span class="v" id="modalGenus">-</span></span>
@@ -233,6 +242,6 @@
 
 <script>window.AV_AUTH_USER="birdnet";</script>
 <script src="./ebird-codes.js?v=r19"></script>
-<script src="./apt.js?v=r21"></script>
+<script src="./apt.js?v=r26"></script>
 </body>
 </html>
