@@ -88,6 +88,7 @@
   var SWITCH_LEAD = SLIDE_MS - 100;   // atlas
   var STATS_LEAD = SLIDE_MS - 200;    // stats - begin a touch sooner
   var currentView = 0;                // collage shows first (no go() needed)
+  var __timelineFetching = false;
   function go(i) {
     i = Math.max(0, Math.min(2, i));
     // Only a genuine view *switch* replays the entrance. go() also fires when
@@ -866,6 +867,8 @@
     timeseries: null,   // ./avian/api/birdnet-api.php?action=timeseries (daily + hourly aggregates)
     firstseen: null,    // ./avian/api/birdnet-api.php?action=firstseen (newest lifelist additions)
     recent: null,       // ./avian/api/birdnet-api.php?action=recent&hours=N (refetched on picker change)
+    timeline: null,     // ./avian/api/birdnet-api.php?action=timeline&hours=N (refetched only when view active)
+    timelineError: false,
   };
 
   // Derived chart arrays, backfilled so 30 buckets always exist.
@@ -1387,12 +1390,32 @@
     renderStatsLists();
     drawHistograms(animate);
     renderAtlas(animate);
+    renderTimeline(animate);
   }
   function renderTimeIndependent(animate) {
     // Lists first, then the graph (see renderWindowDependent).
     renderStatsLists();
     drawHistograms(animate);
     renderAtlas(animate);
+  }
+  function renderTimeline(animate) {
+    if (currentView !== 3) return;
+    var v3 = document.getElementById('v3');
+    if (!v3) {
+      v3 = document.createElement('section');
+      v3.className = 'view';
+      v3.id = 'v3';
+      v3.setAttribute('aria-label', 'Timeline');
+      if (views) views.appendChild(v3);
+    }
+    if (!v3) return;
+    var container = v3.querySelector('.timeline');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'timeline';
+      v3.appendChild(container);
+    }
+    container.innerHTML = '';
   }
 
   function refreshRecent(animate) {
@@ -1401,21 +1424,55 @@
     // lands later - we discard the stale response so the collage
     // never reverts to a different window.
     var forHours = currentHours;
-    return fetchJson('./avian/api/birdnet-api.php?action=recent&hours=' + forHours)
-      .then(function (j) {
-        if (forHours !== currentHours) return; // window changed mid-flight
-        DATA.recent = j; renderWindowDependent(animate);
-      })
-      .catch(function (e) { console.warn('recent fetch failed', e); });
+    DATA.timelineError = false;
+    var timelinePromise = Promise.resolve(null);
+    if (currentView === 3) {
+      __timelineFetching = true;
+      timelinePromise = fetchJson('./avian/api/birdnet-api.php?action=timeline&hours=' + forHours)
+        .catch(function (e) {
+          DATA.timelineError = true;
+          console.warn('timeline fetch failed', e);
+          return null;
+        })
+        .then(function (j) {
+          __timelineFetching = false;
+          return j;
+        });
+    }
+    return Promise.all([
+      fetchJson('./avian/api/birdnet-api.php?action=recent&hours=' + forHours),
+      timelinePromise
+    ]).then(function (parts) {
+      if (forHours !== currentHours) return; // window changed mid-flight
+      if (parts[0]) DATA.recent = parts[0];
+      if (parts[1]) DATA.timeline = parts[1];
+      renderWindowDependent(animate);
+    }).catch(function (e) { console.warn('recent fetch failed', e); });
   }
   function refreshAll(animate) {
     var forHours = currentHours;
+    DATA.timelineError = false;
+    var timelineEntry = Promise.resolve(null);
+    if (currentView === 3) {
+      __timelineFetching = true;
+      timelineEntry = fetchJson('./avian/api/birdnet-api.php?action=timeline&hours=' + forHours)
+        .catch(function (e) {
+          DATA.timelineError = true;
+          console.warn('timeline fetch failed', e);
+          return null;
+        })
+        .then(function (j) {
+          __timelineFetching = false;
+          return j;
+        });
+    }
     return Promise.all([
       fetchJson('./avian/api/birdnet-api.php?action=stats').catch(function () { return null; }),
       fetchJson('./avian/api/birdnet-api.php?action=lifelist').catch(function () { return null; }),
       fetchJson('./avian/api/birdnet-api.php?action=timeseries&days=30').catch(function () { return null; }),
       fetchJson('./avian/api/birdnet-api.php?action=firstseen&limit=10').catch(function () { return null; }),
       fetchJson('./avian/api/birdnet-api.php?action=recent&hours=' + forHours).catch(function () { return null; }),
+      timelineEntry,
     ]).then(function (parts) {
       DATA.stats = parts[0];
       DATA.lifelist = parts[1];
@@ -1424,9 +1481,9 @@
       // Only accept the recent slice if the window hasn't changed
       // since this poll started - otherwise keep what's there.
       if (forHours === currentHours && parts[4]) DATA.recent = parts[4];
+      if (forHours === currentHours && parts[5]) DATA.timeline = parts[5];
       recomputeDerived();
-      renderTimeIndependent(animate);
-      renderCollageFromData(animate);
+      renderWindowDependent(animate);
     });
   }
 
@@ -3433,4 +3490,28 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     var s = readHash();
     if (s) highlightAtlas(s);
   };
+
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'DATA', {
+      get: function () { return DATA; },
+      set: function (v) { DATA = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'currentView', {
+      get: function () { return currentView; },
+      set: function (v) { currentView = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'currentHours', {
+      get: function () { return currentHours; },
+      set: function (v) { currentHours = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, '__timelineFetching', {
+      get: function () { return __timelineFetching; },
+      configurable: true
+    });
+    window.refreshRecent = refreshRecent;
+    window.refreshAll = refreshAll;
+  }
 })();
