@@ -60,7 +60,7 @@
   // Each view's title text. The shared static-head shows one of these
   // based on the current view; identical adjacent values mean the title
   // stays put with no fade (collage and stats both say Heard Recently).
-  var VIEW_TITLES = ['Heard Recently', 'Heard Recently', 'Bird Up!'];
+  var VIEW_TITLES = ['Heard Recently', 'Heard Recently', 'Bird Up!', 'Timeline'];
   var staticHead = document.querySelector('.static-head');
   var staticTitle = document.getElementById('staticTitle');
   function setTitleForView(i) {
@@ -90,7 +90,7 @@
   var currentView = 0;                // collage shows first (no go() needed)
   var __timelineFetching = false;
   function go(i) {
-    i = Math.max(0, Math.min(2, i));
+    i = Math.max(0, Math.min(3, i));
     // Only a genuine view *switch* replays the entrance. go() also fires when
     // a card is expanded (it sets the #sci= hash, which routes through go(2))
     // while already on the atlas - that must not retrigger the load-in.
@@ -106,6 +106,13 @@
     if (i === 0) playCollageEntrance();
     else if (i === 1) playStatsEntrance(STATS_LEAD);
     else if (i === 2) playAtlasEntrance(SWITCH_LEAD);
+    else if (i === 3) {
+      if (!__timelineFetching && (DATA.timeline === null || DATA.timeline.hours !== currentHours)) {
+        refreshRecent(true);
+      } else if (DATA.timeline && DATA.timeline.hours === currentHours) {
+        renderTimeline(true);
+      }
+    }
   }
   btns.forEach(function (b) { b.addEventListener('click', function () { go(+b.dataset.i); }); });
 
@@ -1416,6 +1423,7 @@
       v3.appendChild(container);
     }
     container.innerHTML = '';
+    if (animate) container.classList.add('entering');
   }
 
   function refreshRecent(animate) {
