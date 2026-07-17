@@ -1408,22 +1408,107 @@
   function renderTimeline(animate) {
     if (currentView !== 3) return;
     var v3 = document.getElementById('v3');
-    if (!v3) {
-      v3 = document.createElement('section');
-      v3.className = 'view';
-      v3.id = 'v3';
-      v3.setAttribute('aria-label', 'Timeline');
-      if (views) views.appendChild(v3);
-    }
     if (!v3) return;
-    var container = v3.querySelector('.timeline');
+    var container = document.getElementById('timeline');
     if (!container) {
       container = document.createElement('div');
       container.className = 'timeline';
+      container.id = 'timeline';
       v3.appendChild(container);
     }
     container.innerHTML = '';
-    if (animate) container.classList.add('entering');
+
+    if (DATA.timelineError) {
+      container.innerHTML = '<div class="timeline-error">Couldn\'t load timeline.<br><small>Check your connection and try again.</small></div>';
+      return;
+    }
+    if (!DATA.timeline || __timelineFetching) {
+      container.innerHTML = '<div class="timeline-loading">Loading timeline...</div>';
+      return;
+    }
+
+    var detections = DATA.timeline.detections || [];
+    if (!detections.length) {
+      container.innerHTML = '<div class="timeline-empty">No detections in this window.<br><small>Try a longer time window.</small></div>';
+      return;
+    }
+
+    if (DATA.timeline.truncated) {
+      var cap = document.createElement('div');
+      cap.className = 'timeline-cap';
+      cap.textContent = 'Top ' + (DATA.timeline.limit || detections.length) + ' detections';
+      container.appendChild(cap);
+    }
+
+    var lastDate = null;
+    var rows = [];
+    detections.forEach(function (d, i) {
+      var dateLine = fmtDateLine(d.d, null).replace(/ · $/, '');
+      if (dateLine !== lastDate) {
+        var dateHeader = document.createElement('div');
+        dateHeader.className = 'timeline-date';
+        dateHeader.textContent = dateLine;
+        container.appendChild(dateHeader);
+        lastDate = dateLine;
+      }
+
+      var row = document.createElement('div');
+      row.className = 'timeline-row';
+      row.setAttribute('data-sci', d.sci || '');
+      row.setAttribute('data-file', d.file || '');
+
+      var thumb = document.createElement('div');
+      thumb.className = 'timeline-thumb';
+      var img = document.createElement('img');
+      img.src = './avian/api/cutout.php?sci=' + encodeURIComponent(d.sci || '') +
+        (d.com ? '&com=' + encodeURIComponent(d.com) : '') +
+        '&v=' + SKETCH_VERSION;
+      img.alt = d.com || d.sci || '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      thumb.appendChild(img);
+
+      var playBtn = document.createElement('button');
+      playBtn.type = 'button';
+      playBtn.className = 'timeline-play';
+      playBtn.setAttribute('aria-label', 'play recording');
+      playBtn.innerHTML = ICON_PLAY;
+      thumb.appendChild(playBtn);
+
+      var meta = document.createElement('div');
+      meta.className = 'timeline-meta';
+      var com = document.createElement('div');
+      com.className = 'com';
+      com.textContent = d.com || d.sci || '';
+      var sci = document.createElement('div');
+      sci.className = 'sci';
+      sci.textContent = d.sci || '';
+      var when = document.createElement('div');
+      when.className = 'when';
+      when.textContent = fmtRecTime(d.d, d.t);
+      meta.appendChild(com);
+      meta.appendChild(sci);
+      meta.appendChild(when);
+
+      var conf = document.createElement('div');
+      conf.className = 'timeline-conf';
+      conf.textContent = ((+d.conf || 0) * 100).toFixed(0) + '%';
+
+      row.appendChild(thumb);
+      row.appendChild(meta);
+      row.appendChild(conf);
+      container.appendChild(row);
+      rows.push(row);
+
+      if (animate) {
+        row.style.animationDelay = (i * 40) + 'ms';
+      }
+    });
+
+    if (animate && rows.length) {
+      void container.offsetWidth;
+      rows.forEach(function (r) { r.classList.add('entering'); });
+    }
   }
 
   function refreshRecent(animate) {
