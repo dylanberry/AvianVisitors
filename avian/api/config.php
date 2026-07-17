@@ -10,8 +10,9 @@
 //           so the changes take effect immediately.
 //
 // Default LAN deploy: returns data immediately, no auth.
-// Forwarded deploy:  set AV_REQUIRE_AUTH=1 (env) AND configure Caddy
-// basic_auth on /avian/api/.
+// Forwarded deploy: protected by the shared cookie session from
+// auth.inc.php. A valid birdup_admin session cookie is required when
+// AV_AUTH_HASH is configured in the Caddyfile.
 //
 // Restart requires passwordless sudo for the caddy user that runs
 // php-fpm, dropped in place by install_services.sh at
@@ -19,12 +20,10 @@
 
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
 
-if (getenv('AV_REQUIRE_AUTH') === '1' && empty($_SERVER['HTTP_AUTHORIZATION'])) {
-    http_response_code(401);
-    echo json_encode(['error' => 'unauthorized']);
-    exit;
-}
+require_once __DIR__ . '/auth.inc.php';
+av_require_auth();
 
 // Path layout: /home/{USER}/BirdNET-Pi/avian/api/config.php
 $BIRDNETPI_DIR = dirname(__DIR__, 2);

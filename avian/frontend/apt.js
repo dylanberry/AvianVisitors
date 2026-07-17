@@ -1703,55 +1703,81 @@
   document.addEventListener('click', function (e) { if (!dd.contains(e.target) && e.target !== menuBtn) closeDd(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDd(); });
 
-  // Probe menu.php with no Authorization header. On a LAN deploy
-  // (AV_REQUIRE_AUTH=0) it returns 200 immediately so the drawer
-  // renders directly. On a forwarded deploy with Caddy basic_auth in
-  // front, Caddy will already have validated credentials before this
-  // request reaches PHP - so a 200 here means we're authed, a 401
-  // means Caddy rejected and we need the lock-screen flow.
-  function tryAutoUnlock() {
-    fetch('./avian/api/menu.php', { credentials: 'same-origin' }).then(function (r) {
-      if (r.status === 200) {
-        return r.json().then(function (j) { renderMenu(j.items || []); });
-      }
-    }).catch(function () {});
+  // Check whether the browser still has a valid Bird Up! admin session
+  // cookie. If it does, render the unlocked drawer immediately; otherwise
+  // the lock form stays visible. This gives the "remember me" behavior
+  // across browser restarts without relying on the browser's Basic-auth
+  // credential cache.
+  function checkAuth() {
+    fetch('./avian/api/auth.php?action=status', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && (j.authenticated || j.auth_enabled === false)) loadMenu();
+      }).catch(function () {});
   }
-  // tryAutoUnlock(); // disabled: Caddy basic_auth prompts on 401 before any user interaction
+
+  function loadMenu() {
+    fetch('./avian/api/menu.php', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) {
+        if (r.status === 200) return r.json();
+        throw new Error('menu ' + r.status);
+      })
+      .then(function (j) { renderMenu(j.items || []); })
+      .catch(function () {
+        lockHint.textContent = 'auth unavailable.';
+        lockHint.classList.add('lock-err');
+      });
+  }
 
   document.getElementById('unlockForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    // BirdNET-Pi's upstream Caddyfile basicauth user is `birdnet`.
-    // If your install changed it (custom Caddyfile), set window.AV_AUTH_USER
-    // before this script loads - e.g. an inline <script> in index.html.
     var u = (window.AV_AUTH_USER || 'birdnet');
     var p = document.getElementById('lockPass').value;
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', './avian/api/menu.php', true, u, p);
-    xhr.onload = function () {
-      if (xhr.status === 200) {
-        try {
-          var j = JSON.parse(xhr.responseText);
-          renderMenu(j.items || []);
-        } catch (err) {
-          lockHint.textContent = 'auth unavailable.';
+    lockHint.textContent = '';
+    lockHint.classList.remove('lock-err');
+
+    fetch('./avian/api/auth.php', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'action=login&username=' + encodeURIComponent(u) + '&password=' + encodeURIComponent(p)
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (res.ok && res.j && res.j.ok) {
+          document.getElementById('lockPass').value = '';
+          loadMenu();
+        } else {
+          lockHint.textContent = 'wrong password.';
           lockHint.classList.add('lock-err');
+          document.getElementById('lockPass').value = '';
+          document.getElementById('lockPass').focus();
         }
-      } else if (xhr.status === 401) {
-        lockHint.textContent = 'wrong password.';
-        lockHint.classList.add('lock-err');
-        document.getElementById('lockPass').value = '';
-        document.getElementById('lockPass').focus();
-      } else {
+      })
+      .catch(function () {
         lockHint.textContent = 'auth unavailable.';
         lockHint.classList.add('lock-err');
-      }
-    };
-    xhr.onerror = function () {
-      lockHint.textContent = 'network error.';
-      lockHint.classList.add('lock-err');
-    };
-    xhr.send();
+      });
   });
+
+  function logout() {
+    fetch('./avian/api/auth.php', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'action=logout'
+    }).then(function () {
+      locked.style.display = '';
+      items.classList.remove('show');
+      items.innerHTML = '';
+      window.__avAuthenticated = false;
+      updateAuthUI();
+      closeAdmin();
+      closeDd();
+    }).catch(function () {});
+  }
+
+  checkAuth();
 
   // Render the unlocked drawer:
   //   - inline LIVE AUDIO player (streams icecast through the worker tunnel)
@@ -1788,7 +1814,8 @@
       // real time. No separate toggle.
       + '<canvas class="live-spectro" id="liveSpectro" width="600" height="120" aria-label="live spectrogram"></canvas>'
       + '<div class="live-status" id="liveStatus"></div>'
-      + '<div class="menu-links">' + linksHtml + '</div>';
+      + '<div class="menu-links">' + linksHtml + '</div>'
+      + '<div class="logout-row"><button type="button" id="logoutBtn">logout</button></div>';
 
     // Clicking a nav link (settings / system / logs / tools) collapses the
     // menu back into the button - it has opened (or navigated to) its page,

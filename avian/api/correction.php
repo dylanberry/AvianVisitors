@@ -9,19 +9,16 @@
 //   exclude         - append a species to the upstream exclude list
 //   exclude_all     - append a species to the upstream exclude list
 //
-// Protected by the same AV_REQUIRE_AUTH + HTTP_AUTHORIZATION gate as
-// config.php and menu.php. The real credential check is done by Caddy
-// basic_auth; this PHP file only verifies that an Authorization header
-// is present when auth is required.
+// Protected by the shared cookie session from auth.inc.php. If the
+// Caddyfile has AV_AUTH_HASH set, a valid birdup_admin session cookie is
+// required; otherwise the endpoint is open (default LAN deploy).
 
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
 
-if (getenv('AV_REQUIRE_AUTH') === '1' && empty($_SERVER['HTTP_AUTHORIZATION'])) {
-    http_response_code(401);
-    echo json_encode(['error' => 'unauthorized']);
-    exit;
-}
+require_once __DIR__ . '/auth.inc.php';
+av_require_auth();
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method !== 'POST') {
@@ -183,14 +180,30 @@ function addExcludeEntry(string $birdnetPiDir, string $excludePath, string $sci)
         }
     }
 
-    if (!$exists) {
-        $written = file_put_contents($excludePath, $entry . "\n", FILE_APPEND | LOCK_EX);
-        if ($written === false) {
-            json_err(500, 'failed to write exclude list');
-        }
+    if ($exists) {
+        return false;
     }
 
-    return !$exists;
+    $dir = dirname($excludePath);
+    if (!is_dir($dir)) {
+        json_err(500, 'exclude list directory not found: ' . $dir);
+    }
+
+    if (file_exists($excludePath)) {
+        if (!is_writable($excludePath)) {
+            json_err(500, 'exclude list is not writable: ' . $excludePath . '. Ensure the PHP-FPM user can write to it (e.g., sudo chown :caddy ' . $excludePath . ' && sudo chmod g+w ' . $excludePath . ')');
+        }
+    } elseif (!is_writable($dir)) {
+        json_err(500, 'cannot create exclude list: ' . $excludePath . ' because ' . $dir . ' is not writable. Create the file and give the PHP-FPM user write access (e.g., sudo touch ' . $excludePath . ' && sudo chown :caddy ' . $excludePath . ' && sudo chmod g+w ' . $excludePath . ')');
+    }
+
+    $written = @file_put_contents($excludePath, $entry . "\n", FILE_APPEND | LOCK_EX);
+    if ($written === false) {
+        $err = error_get_last();
+        json_err(500, 'failed to write exclude list: ' . $excludePath . ' (' . ($err['message'] ?? 'unknown error') . ')');
+    }
+
+    return true;
 }
 
 if ($action === 'hide') {
