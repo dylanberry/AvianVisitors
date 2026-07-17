@@ -3490,28 +3490,4 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     var s = readHash();
     if (s) highlightAtlas(s);
   };
-
-  if (typeof window !== 'undefined') {
-    Object.defineProperty(window, 'DATA', {
-      get: function () { return DATA; },
-      set: function (v) { DATA = v; },
-      configurable: true
-    });
-    Object.defineProperty(window, 'currentView', {
-      get: function () { return currentView; },
-      set: function (v) { currentView = v; },
-      configurable: true
-    });
-    Object.defineProperty(window, 'currentHours', {
-      get: function () { return currentHours; },
-      set: function (v) { currentHours = v; },
-      configurable: true
-    });
-    Object.defineProperty(window, '__timelineFetching', {
-      get: function () { return __timelineFetching; },
-      configurable: true
-    });
-    window.refreshRecent = refreshRecent;
-    window.refreshAll = refreshAll;
-  }
 })();
