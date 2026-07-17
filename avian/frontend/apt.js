@@ -144,6 +144,46 @@
     if (__audioActiveStop === stopSelf) __audioActiveStop = null;
   }
 
+  var timelineAudio = null;
+  var timelineBtn = null;
+  function setTimelineBtnState(btn, state) {
+    btn.setAttribute('data-state', state);
+    if (state === 'playing') {
+      btn.setAttribute('data-active', 'true');
+      btn.innerHTML = ICON_PAUSE;
+      btn.setAttribute('aria-label', 'stop');
+    } else if (state === 'loading') {
+      btn.setAttribute('data-active', 'true');
+      btn.innerHTML = ICON_PLAY;
+      btn.setAttribute('aria-label', 'loading');
+    } else if (state === 'missing') {
+      btn.setAttribute('data-active', 'false');
+      btn.setAttribute('aria-label', 'no audio');
+      setTimeout(function () {
+        if (btn.getAttribute('data-state') === 'missing') {
+          btn.setAttribute('data-state', 'idle');
+          btn.setAttribute('aria-label', 'play recording');
+          btn.innerHTML = ICON_PLAY;
+        }
+      }, 2200);
+    } else {
+      btn.setAttribute('data-active', 'false');
+      btn.innerHTML = ICON_PLAY;
+      btn.setAttribute('aria-label', 'play recording');
+    }
+  }
+  function stopTimelineAudio() {
+    audioRelease(stopTimelineAudio);
+    if (timelineAudio) {
+      try { timelineAudio.pause(); } catch (e) {}
+      timelineAudio = null;
+    }
+    if (timelineBtn) {
+      setTimelineBtnState(timelineBtn, 'idle');
+      timelineBtn = null;
+    }
+  }
+
   // ---- Theme (light / charcoal dark) ----
   // A per-device preference (localStorage), applied as data-theme on
   // <html>. An inline script in index.html sets it before first paint to
@@ -1471,9 +1511,35 @@
       var playBtn = document.createElement('button');
       playBtn.type = 'button';
       playBtn.className = 'timeline-play';
-      playBtn.setAttribute('aria-label', 'play recording');
-      playBtn.innerHTML = ICON_PLAY;
+      setTimelineBtnState(playBtn, 'idle');
       thumb.appendChild(playBtn);
+
+      playBtn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (playBtn === timelineBtn) { stopTimelineAudio(); return; }
+        stopTimelineAudio();
+        audioClaim(stopTimelineAudio);
+        setTimelineBtnState(playBtn, 'loading');
+        timelineBtn = playBtn;
+        var audio = new Audio('./avian/api/recording.php?file=' + encodeURIComponent(d.file || ''));
+        audio.addEventListener('canplay', function () {
+          if (timelineBtn !== playBtn) return;
+          setTimelineBtnState(playBtn, 'playing');
+          audio.play();
+        });
+        audio.addEventListener('ended', function () {
+          if (timelineBtn === playBtn) stopTimelineAudio();
+        });
+        audio.addEventListener('error', function () {
+          if (timelineBtn === playBtn) {
+            setTimelineBtnState(playBtn, 'missing');
+            timelineAudio = null;
+            timelineBtn = null;
+          }
+        });
+        timelineAudio = audio;
+        audio.load();
+      });
 
       var meta = document.createElement('div');
       meta.className = 'timeline-meta';
@@ -1499,6 +1565,11 @@
       row.appendChild(conf);
       container.appendChild(row);
       rows.push(row);
+
+      row.addEventListener('click', function (ev) {
+        if (ev.target.closest('.timeline-play')) return;
+        openDetailModal(d.sci);
+      });
 
       if (animate) {
         row.style.animationDelay = (i * 40) + 'ms';
