@@ -6,6 +6,7 @@
 //   stats       - totals (detections, unique species, today, last hour)
 //   lifelist    - every species with first_seen, last_seen, total_count
 //   recent      - &hours=N (default 24): species heard in the window
+//   timeline    - &hours=N (default 24) &limit=M (default 200): chronological detections
 //   species     - &sci=<sci_name>: per-species detail page
 //   timeseries  - &days=N: daily detection counts per species
 //   firstseen   - every species' earliest detection
@@ -120,6 +121,46 @@ switch ($action) {
             $r['top_at']   = isset($best['d']) ? ($best['d'].' '.$best['t']) : null;
         }
         echo json_encode(['hours' => $hours, 'species' => $rs, 'as_of' => date('c')]);
+        break;
+    }
+
+    case 'timeline': {
+        // Chronological detection feed. ALL window (hours >= 1000000) drops the
+        // julianday filter so the query can be satisfied by a Date/Time index.
+        $hours = max(1, min(1000000, (int)($_GET['hours'] ?? 24)));
+        $limit = max(1, min(500, (int)($_GET['limit'] ?? 200)));
+        $limPlusOne = $limit + 1;
+        $allWindow = $hours >= 1000000;
+
+        $fields = 'Date AS d, Time AS t, Sci_Name AS sci, Com_Name AS com, Confidence AS conf, File_Name AS file';
+        $orderLimit = 'ORDER BY Date DESC, Time DESC LIMIT :lim_plus_one';
+
+        if ($allWindow) {
+            $rs = rows($db,
+              "SELECT $fields FROM detections WHERE Hidden != 1 $orderLimit",
+              [':lim_plus_one' => $limPlusOne]
+            );
+        } else {
+            $rs = rows($db,
+              "SELECT $fields FROM detections "
+            . "WHERE (julianday('now','localtime') - julianday(Date||' '||Time)) * 24 <= :hrs AND Hidden != 1 "
+            . "$orderLimit",
+              [':hrs' => $hours, ':lim_plus_one' => $limPlusOne]
+            );
+        }
+
+        $truncated = count($rs) === $limPlusOne;
+        if ($truncated) {
+            array_pop($rs);
+        }
+
+        echo json_encode([
+            'hours' => $hours,
+            'limit' => $limit,
+            'truncated' => $truncated,
+            'detections' => $rs,
+            'as_of' => date('c'),
+        ]);
         break;
     }
 
