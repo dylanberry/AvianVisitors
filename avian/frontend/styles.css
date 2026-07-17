@@ -1174,6 +1174,102 @@
     .timeline-loading { animation: none; }
   }
 
+  /* ---- Timeline species groups (accordion) ----
+     Multi-detection groups render as a clickable summary row plus a
+     collapsible list of child rows. Single-detection groups reuse the
+     plain .timeline-row above. */
+  .timeline-group-wrap {
+    display: flex;
+    flex-direction: column;
+  }
+  .timeline-row.timeline-group {
+    cursor: pointer;
+  }
+  .timeline-group-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-self: end;
+  }
+  .timeline-group-count {
+    font: 10px ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+    background: var(--paper-2);
+    padding: 3px 7px;
+    border-radius: 4px;
+    box-shadow: var(--recess);
+    font-variant-numeric: tabular-nums;
+  }
+  .timeline-group-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    color: var(--ink-soft);
+    transition: transform 200ms ease;
+  }
+  .timeline-group-chevron svg { width: 12px; height: 12px; display: block; }
+  .timeline-group-wrap.expanded > .timeline-row .timeline-group-chevron {
+    transform: rotate(180deg);
+  }
+  .timeline-group-children {
+    display: none;
+    flex-direction: column;
+  }
+  .timeline-group-wrap.expanded > .timeline-group-children {
+    display: flex;
+  }
+  .timeline-child {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 7px 0 7px 78px;
+    box-shadow: inset 0 -1px 0 var(--hairline);
+    cursor: pointer;
+  }
+  .timeline-child-play {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    border: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--raised);
+    transition: transform 160ms ease, color 160ms ease;
+  }
+  .timeline-child-play:hover { transform: scale(1.05); color: var(--accent); }
+  .timeline-child-play svg { width: 8px; height: 8px; display: block; }
+  .timeline-child-time {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    font: 10px/1.2 ui-monospace, Menlo, monospace;
+    color: var(--ink-2);
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+  }
+  .timeline-child-time .t { color: var(--ink-2); }
+  .timeline-child-time .ago { color: var(--ink-soft); }
+  @media (max-width: 700px) {
+    .timeline-child { padding-left: 62px; gap: 10px; }
+    .timeline-child-play { width: 20px; height: 20px; }
+    .timeline-child-play svg { width: 7px; height: 7px; }
+    .timeline-group-right { gap: 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .timeline-group-chevron { transition: none; }
+  }
+
   /* ============ Admin screen (system / logs / tools) ============
      Overlays the slider when activated via #admin=... hash. Lives
      inside the same shell as the rest of the app so the header,

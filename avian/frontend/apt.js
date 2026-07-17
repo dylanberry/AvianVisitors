@@ -1198,6 +1198,7 @@
   var ICON_PLAY = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L10 6 L3 10 Z"/></svg>';
   var ICON_PAUSE = '<svg viewBox="0 0 12 12" fill="currentColor"><rect x="3" y="2" width="2.5" height="8"/><rect x="6.5" y="2" width="2.5" height="8"/></svg>';
   var ICON_FLAG = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M2 2 L2 10 M2 2 L10 2 L7 5 L10 8 L2 8 Z"/></svg>';
+  var ICON_CHEVRON = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 L6 7.5 L9 4.5"/></svg>';
 
   function renderAtlas(animate) {
     var grid = document.getElementById('atlasGrid');
@@ -1445,6 +1446,249 @@
     drawHistograms(animate);
     renderAtlas(animate);
   }
+  // ---- Timeline grouping ----
+  // Detections arrive ordered Date DESC, Time DESC (newest first). Within
+  // each date we group by species: a detection joins the open group for its
+  // species if it is within 5 minutes of the last detection added to that
+  // group, otherwise it starts a new group. Groups never cross dates.
+  var TIMELINE_GROUP_GAP_MS = 5 * 60 * 1000;
+  var timelineGroupExpanded = {};
+
+  function detectionMs(d) {
+    var ms = Date.parse((d.d || '') + 'T' + (d.t || '00:00:00'));
+    return isNaN(ms) ? null : ms;
+  }
+
+  function buildTimelineGroups(detections) {
+    var days = [];
+    var dayByKey = {};
+    var openGroup = {}; // sci -> open group for the current date
+    var openTime = {}; // sci -> ms of last detection in its open group
+    detections.forEach(function (d) {
+      var dateLine = fmtDateLine(d.d, null).replace(/ · $/, '');
+      if (!dayByKey[dateLine]) {
+        dayByKey[dateLine] = { dateLine: dateLine, groups: [] };
+        days.push(dayByKey[dateLine]);
+        openGroup = {};
+        openTime = {};
+      }
+      var day = dayByKey[dateLine];
+      var sci = d.sci || '';
+      var ms = detectionMs(d);
+      var g = openGroup[sci];
+      if (g && openTime[sci] != null && ms != null && Math.abs(ms - openTime[sci]) <= TIMELINE_GROUP_GAP_MS) {
+        g.items.push(d);
+      } else {
+        g = { sci: sci, com: d.com || sci, items: [d] };
+        openGroup[sci] = g;
+        day.groups.push(g);
+      }
+      if (ms != null) openTime[sci] = ms;
+    });
+    // Derive per-group summary fields and a stable key (oldest detection).
+    days.forEach(function (day) {
+      day.groups.forEach(function (g) {
+        var oldest = g.items[g.items.length - 1];
+        g.oldest = oldest;
+        g.newest = g.items[0]; // list is newest-first, so items[0] is most recent
+        g.count = g.items.length;
+        g.maxConf = 0;
+        g.items.forEach(function (x) {
+          var c = +x.conf || 0;
+          if (c > g.maxConf) g.maxConf = c;
+        });
+        g.key = g.sci + '|' + (oldest.d || '') + '|' + (oldest.t || '');
+      });
+    });
+    return days;
+  }
+
+  function makeTimelineThumb(d) {
+    var thumb = document.createElement('div');
+    thumb.className = 'timeline-thumb';
+    var img = document.createElement('img');
+    img.src = './avian/api/cutout.php?sci=' + encodeURIComponent(d.sci || '') +
+      (d.com ? '&com=' + encodeURIComponent(d.com) : '') +
+      '&v=' + SKETCH_VERSION;
+    img.alt = d.com || d.sci || '';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    thumb.appendChild(img);
+    return thumb;
+  }
+
+  function makeTimelinePlayBtn() {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'timeline-play';
+    return btn;
+  }
+
+  // Wires the shared single-audio coordinator to a timeline play button.
+  // Reused by single rows, group headers, and child rows so playback stays
+  // identical everywhere.
+  function wireTimelinePlay(playBtn, d) {
+    setTimelineBtnState(playBtn, 'idle');
+    playBtn.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (playBtn === timelineBtn) { stopTimelineAudio(); return; }
+      stopTimelineAudio();
+      audioClaim(stopTimelineAudio);
+      setTimelineBtnState(playBtn, 'loading');
+      timelineBtn = playBtn;
+      var audio = new Audio('./avian/api/recording.php?file=' + encodeURIComponent(d.file || ''));
+      audio.addEventListener('canplay', function () {
+        if (timelineBtn !== playBtn) return;
+        setTimelineBtnState(playBtn, 'playing');
+        audio.play();
+      });
+      audio.addEventListener('ended', function () {
+        if (timelineBtn === playBtn) stopTimelineAudio();
+      });
+      audio.addEventListener('error', function () {
+        if (timelineBtn === playBtn) {
+          setTimelineBtnState(playBtn, 'missing');
+          timelineAudio = null;
+          timelineBtn = null;
+        }
+      });
+      timelineAudio = audio;
+      audio.load();
+    });
+  }
+
+  function groupTimeRange(g) {
+    var a = g.oldest.t ? g.oldest.t.slice(0, 5) : '';
+    var b = g.newest.t ? g.newest.t.slice(0, 5) : '';
+    var range = a === b ? a : (a + '\u2013' + b);
+    return range + ' \u00b7 ' + fmtRecTime(g.newest.d, g.newest.t);
+  }
+
+  function makeTimelineSingleRow(d) {
+    var row = document.createElement('div');
+    row.className = 'timeline-row';
+    row.setAttribute('data-sci', d.sci || '');
+    row.setAttribute('data-file', d.file || '');
+
+    var thumb = makeTimelineThumb(d);
+    var playBtn = makeTimelinePlayBtn();
+    wireTimelinePlay(playBtn, d);
+    thumb.appendChild(playBtn);
+    row.appendChild(thumb);
+
+    var meta = document.createElement('div');
+    meta.className = 'timeline-meta';
+    var com = document.createElement('div');
+    com.className = 'com';
+    com.textContent = d.com || d.sci || '';
+    var sci = document.createElement('div');
+    sci.className = 'sci';
+    sci.textContent = d.sci || '';
+    var when = document.createElement('div');
+    when.className = 'when';
+    when.textContent = fmtRecTime(d.d, d.t);
+    meta.appendChild(com);
+    meta.appendChild(sci);
+    meta.appendChild(when);
+    row.appendChild(meta);
+
+    var conf = document.createElement('div');
+    conf.className = 'timeline-conf';
+    conf.textContent = ((+d.conf || 0) * 100).toFixed(0) + '%';
+    row.appendChild(conf);
+
+    row.addEventListener('click', function (ev) {
+      if (ev.target.closest('.timeline-play')) return;
+      openDetailModal(d.sci);
+    });
+    return row;
+  }
+
+  function makeTimelineGroupHeader(g) {
+    var row = document.createElement('div');
+    row.className = 'timeline-row timeline-group';
+    row.setAttribute('data-sci', g.sci || '');
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('aria-expanded', timelineGroupExpanded[g.key] ? 'true' : 'false');
+
+    var thumb = makeTimelineThumb(g.newest);
+    var playBtn = makeTimelinePlayBtn();
+    wireTimelinePlay(playBtn, g.newest);
+    thumb.appendChild(playBtn);
+    row.appendChild(thumb);
+
+    var meta = document.createElement('div');
+    meta.className = 'timeline-meta';
+    var com = document.createElement('div');
+    com.className = 'com';
+    com.textContent = g.com || g.sci || '';
+    var sci = document.createElement('div');
+    sci.className = 'sci';
+    sci.textContent = g.sci || '';
+    var when = document.createElement('div');
+    when.className = 'when';
+    when.textContent = groupTimeRange(g);
+    meta.appendChild(com);
+    meta.appendChild(sci);
+    meta.appendChild(when);
+    row.appendChild(meta);
+
+    var right = document.createElement('div');
+    right.className = 'timeline-group-right';
+    var count = document.createElement('span');
+    count.className = 'timeline-group-count';
+    count.textContent = g.count + '\u00d7';
+    var conf = document.createElement('div');
+    conf.className = 'timeline-conf';
+    conf.textContent = (g.maxConf * 100).toFixed(0) + '%';
+    var chev = document.createElement('span');
+    chev.className = 'timeline-group-chevron';
+    chev.setAttribute('aria-hidden', 'true');
+    chev.innerHTML = ICON_CHEVRON;
+    right.appendChild(count);
+    right.appendChild(conf);
+    right.appendChild(chev);
+    row.appendChild(right);
+    return row;
+  }
+
+  function makeTimelineChildRow(d) {
+    var row = document.createElement('div');
+    row.className = 'timeline-child';
+    row.setAttribute('data-sci', d.sci || '');
+    row.setAttribute('data-file', d.file || '');
+
+    var playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'timeline-child-play';
+    wireTimelinePlay(playBtn, d);
+    row.appendChild(playBtn);
+
+    var time = document.createElement('div');
+    time.className = 'timeline-child-time';
+    var exact = document.createElement('span');
+    exact.className = 't';
+    exact.textContent = (d.t || '').slice(0, 8);
+    var ago = document.createElement('span');
+    ago.className = 'ago';
+    ago.textContent = fmtRecTime(d.d, d.t);
+    time.appendChild(exact);
+    time.appendChild(ago);
+    row.appendChild(time);
+
+    var conf = document.createElement('div');
+    conf.className = 'timeline-conf';
+    conf.textContent = ((+d.conf || 0) * 100).toFixed(0) + '%';
+    row.appendChild(conf);
+
+    row.addEventListener('click', function (ev) {
+      if (ev.target.closest('.timeline-child-play')) return;
+      openDetailModal(d.sci);
+    });
+    return row;
+  }
+
   function renderTimeline(animate) {
     if (currentView !== 3) return;
     var v3 = document.getElementById('v3');
@@ -1480,105 +1724,74 @@
       container.appendChild(cap);
     }
 
-    var lastDate = null;
-    var rows = [];
-    detections.forEach(function (d, i) {
-      var dateLine = fmtDateLine(d.d, null).replace(/ · $/, '');
-      if (dateLine !== lastDate) {
-        var dateHeader = document.createElement('div');
-        dateHeader.className = 'timeline-date';
-        dateHeader.textContent = dateLine;
-        container.appendChild(dateHeader);
-        lastDate = dateLine;
-      }
+    var days = buildTimelineGroups(detections);
 
-      var row = document.createElement('div');
-      row.className = 'timeline-row';
-      row.setAttribute('data-sci', d.sci || '');
-      row.setAttribute('data-file', d.file || '');
-
-      var thumb = document.createElement('div');
-      thumb.className = 'timeline-thumb';
-      var img = document.createElement('img');
-      img.src = './avian/api/cutout.php?sci=' + encodeURIComponent(d.sci || '') +
-        (d.com ? '&com=' + encodeURIComponent(d.com) : '') +
-        '&v=' + SKETCH_VERSION;
-      img.alt = d.com || d.sci || '';
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      thumb.appendChild(img);
-
-      var playBtn = document.createElement('button');
-      playBtn.type = 'button';
-      playBtn.className = 'timeline-play';
-      setTimelineBtnState(playBtn, 'idle');
-      thumb.appendChild(playBtn);
-
-      playBtn.addEventListener('click', function (ev) {
-        ev.stopPropagation();
-        if (playBtn === timelineBtn) { stopTimelineAudio(); return; }
-        stopTimelineAudio();
-        audioClaim(stopTimelineAudio);
-        setTimelineBtnState(playBtn, 'loading');
-        timelineBtn = playBtn;
-        var audio = new Audio('./avian/api/recording.php?file=' + encodeURIComponent(d.file || ''));
-        audio.addEventListener('canplay', function () {
-          if (timelineBtn !== playBtn) return;
-          setTimelineBtnState(playBtn, 'playing');
-          audio.play();
-        });
-        audio.addEventListener('ended', function () {
-          if (timelineBtn === playBtn) stopTimelineAudio();
-        });
-        audio.addEventListener('error', function () {
-          if (timelineBtn === playBtn) {
-            setTimelineBtnState(playBtn, 'missing');
-            timelineAudio = null;
-            timelineBtn = null;
-          }
-        });
-        timelineAudio = audio;
-        audio.load();
-      });
-
-      var meta = document.createElement('div');
-      meta.className = 'timeline-meta';
-      var com = document.createElement('div');
-      com.className = 'com';
-      com.textContent = d.com || d.sci || '';
-      var sci = document.createElement('div');
-      sci.className = 'sci';
-      sci.textContent = d.sci || '';
-      var when = document.createElement('div');
-      when.className = 'when';
-      when.textContent = fmtRecTime(d.d, d.t);
-      meta.appendChild(com);
-      meta.appendChild(sci);
-      meta.appendChild(when);
-
-      var conf = document.createElement('div');
-      conf.className = 'timeline-conf';
-      conf.textContent = ((+d.conf || 0) * 100).toFixed(0) + '%';
-
-      row.appendChild(thumb);
-      row.appendChild(meta);
-      row.appendChild(conf);
-      container.appendChild(row);
-      rows.push(row);
-
-      row.addEventListener('click', function (ev) {
-        if (ev.target.closest('.timeline-play')) return;
-        openDetailModal(d.sci);
-      });
-
-      if (animate) {
-        row.style.animationDelay = (i * 40) + 'ms';
-      }
+    // Prune stale expansion keys so the map only tracks groups still present.
+    var presentKeys = {};
+    days.forEach(function (day) {
+      day.groups.forEach(function (g) { if (g.count > 1) presentKeys[g.key] = true; });
+    });
+    Object.keys(timelineGroupExpanded).forEach(function (k) {
+      if (!presentKeys[k]) delete timelineGroupExpanded[k];
     });
 
-    if (animate && rows.length) {
+    var animRows = [];
+    days.forEach(function (day) {
+      var dateHeader = document.createElement('div');
+      dateHeader.className = 'timeline-date';
+      dateHeader.textContent = day.dateLine;
+      container.appendChild(dateHeader);
+
+      day.groups.forEach(function (g) {
+        if (g.count > 1) {
+          var wrap = document.createElement('div');
+          wrap.className = 'timeline-group-wrap';
+          if (timelineGroupExpanded[g.key]) wrap.classList.add('expanded');
+
+          var header = makeTimelineGroupHeader(g);
+          wrap.appendChild(header);
+          animRows.push(header);
+
+          var children = document.createElement('div');
+          children.className = 'timeline-group-children';
+          g.items.forEach(function (d) {
+            children.appendChild(makeTimelineChildRow(d));
+          });
+          wrap.appendChild(children);
+
+          function toggleGroup() {
+            var expanded = wrap.classList.toggle('expanded');
+            header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            if (expanded) timelineGroupExpanded[g.key] = true;
+            else delete timelineGroupExpanded[g.key];
+          }
+
+          header.addEventListener('click', function (ev) {
+            if (ev.target.closest('.timeline-play')) return;
+            toggleGroup();
+          });
+          header.addEventListener('keydown', function (ev) {
+            if (ev.target.closest('.timeline-play')) return;
+            if (ev.key !== 'Enter' && ev.key !== ' ') return;
+            ev.preventDefault();
+            toggleGroup();
+          });
+
+          container.appendChild(wrap);
+        } else {
+          var row = makeTimelineSingleRow(g.newest);
+          container.appendChild(row);
+          animRows.push(row);
+        }
+      });
+    });
+
+    if (animate && animRows.length) {
       void container.offsetWidth;
-      rows.forEach(function (r) { r.classList.add('entering'); });
+      animRows.forEach(function (r, i) {
+        r.style.animationDelay = (i * 40) + 'ms';
+        r.classList.add('entering');
+      });
     }
   }
 
@@ -1788,6 +2001,7 @@
   function renderMenu(menu) {
     locked.style.display = 'none';
     items.classList.add('show');
+    window.__avAuthenticated = true;
     updateAuthUI();
     var liveAudioIcon = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L10 6 L3 10 Z"/></svg>';
     var stopIcon = '<svg viewBox="0 0 12 12" fill="currentColor"><rect x="3" y="3" width="6" height="6"/></svg>';
@@ -1826,6 +2040,9 @@
     if (menuLinks) menuLinks.addEventListener('click', function (ev) {
       if (ev.target.closest('a')) closeDd();
     });
+
+    var logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.addEventListener('click', logout);
 
     // Live audio + realtime spectrogram. The audio element and the
     // FFT analyser share one AudioContext; once .play() is called the
