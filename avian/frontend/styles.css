@@ -152,12 +152,30 @@
   }
 
   /* ============ Bottom slider - recessed track, raised active pill ============ */
-  .slider {
+  .slider-wrap {
     position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 0; padding: 4px; z-index: 30;
+    z-index: 30;
+    max-width: calc(100vw - 24px);
+    border-radius: 999px;
+    pointer-events: auto;
+  }
+  .slider-wrap::after {
+    content: '';
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: 20px;
+    border-radius: 0 999px 999px 0;
+    background: linear-gradient(90deg, transparent, var(--paper));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+  .slider {
+    position: relative;
+    display: inline-flex; gap: 0; padding: 4px;
     background: var(--paper-2); border-radius: 999px;
     box-shadow: var(--recess);
-    position: fixed; /* re-emit for the pill positioning */
+    flex-wrap: nowrap;
+    white-space: nowrap;
   }
   .slider button {
     background: transparent; border: 0; color: var(--ink-soft);
@@ -1005,6 +1023,157 @@
     letter-spacing: 0.06em;
   }
 
+  /* ============ View 4 - Timeline ============
+     A scrollable, chronological list of detections. Rows are grouped by
+     sticky date headers and reuse the same bird-card entrance keyframe. */
+  .view#v3 {
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .timeline {
+    position: relative;
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 0 0 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .timeline-date {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 10px 0;
+    background: var(--paper);
+    font: 10px/1 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    box-shadow: inset 0 -1px 0 var(--hairline);
+  }
+  .timeline-row {
+    display: grid;
+    grid-template-columns: 64px 1fr auto;
+    gap: 14px;
+    align-items: center;
+    padding: 10px 0;
+    box-shadow: inset 0 -1px 0 var(--hairline);
+  }
+  .timeline-row.entering { animation: bird-card-in 0.45s ease-out both; }
+  .timeline-thumb {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    border-radius: 10px;
+    background: var(--paper-2);
+    overflow: hidden;
+    box-shadow: var(--edge);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .timeline-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  .timeline-play {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    border: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--raised);
+    transition: transform 160ms ease, color 160ms ease;
+  }
+  .timeline-play:hover { transform: scale(1.05); color: var(--accent); }
+  .timeline-play svg { width: 8px; height: 8px; display: block; }
+  .timeline-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .timeline-meta .com {
+    font: 700 14px/1.2 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .timeline-meta .sci {
+    font: italic 11px/1.2 ui-serif, Georgia, serif;
+    color: var(--ink-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .timeline-meta .when {
+    font: 10px/1.2 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+  }
+  .timeline-conf {
+    justify-self: end;
+    font: 11px ui-monospace, Menlo, monospace;
+    color: var(--ink-2);
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    background: var(--paper-2);
+    padding: 4px 9px;
+    border-radius: 4px;
+    box-shadow: var(--recess);
+  }
+  .timeline-empty,
+  .timeline-loading,
+  .timeline-error {
+    padding: 80px 16px;
+    text-align: center;
+    font: 12px/1.6 ui-serif, Georgia, serif;
+    color: var(--ink-2);
+  }
+  .timeline-loading { animation: stats-fade-in 1.2s ease-in-out infinite alternate; }
+  .timeline-error { color: var(--accent); }
+  .timeline-cap {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 2;
+    background: var(--paper);
+    padding: 1px 0 3px 8px;
+    font: 8.5px/1 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+  }
+  @media (max-width: 700px) {
+    .timeline { padding: 0 0 24px; gap: 14px; }
+    .timeline-row { grid-template-columns: 52px 1fr auto; gap: 10px; padding: 8px 0; }
+    .timeline-thumb { width: 52px; height: 52px; border-radius: 8px; }
+    .timeline-play { width: 20px; height: 20px; right: 3px; bottom: 3px; }
+    .timeline-play svg { width: 7px; height: 7px; }
+    .timeline-meta .com { font-size: 13px; }
+    .timeline-meta .sci { font-size: 10px; }
+    .timeline-meta .when { font-size: 9px; }
+    .timeline-conf { font-size: 10px; padding: 3px 7px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .timeline-row.entering,
+    .timeline-loading { animation: none; }
+  }
+
   /* ============ Admin screen (system / logs / tools) ============
      Overlays the slider when activated via #admin=... hash. Lives
      inside the same shell as the rest of the app so the header,
@@ -1194,8 +1363,26 @@
     .admin-actions-grid { gap: 10px; grid-template-columns: 1fr; }
     .admin-action { padding: 12px 14px; }
     /* Slider track bottom nav: tuck closer to bottom edge */
-    .slider { bottom: 14px; padding: 3px; }
+    .slider-wrap { bottom: 14px; }
+    .slider { padding: 3px; }
     .slider button { font-size: 9.5px; padding: 6px 11px; }
+  }
+  @media (max-width: 420px) and (min-width: 361px) {
+    .slider-wrap { max-width: 100vw; }
+    .slider button { font-size: 9px; padding: 6px 10px; letter-spacing: 0.18em; }
+  }
+  @media (max-width: 360px) {
+    .slider-wrap {
+      max-width: calc(100vw - 16px);
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .slider-wrap::-webkit-scrollbar { display: none; }
+    .slider-wrap::after { opacity: 1; }
+    .slider button { font-size: 9px; padding: 6px 10px; letter-spacing: 0.18em; }
   }
   @media (max-width: 700px) {
     /* Detail-modal: full-screen on small screens. */
