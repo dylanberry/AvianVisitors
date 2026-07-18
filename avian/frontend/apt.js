@@ -3358,7 +3358,7 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
 
   // Initial load: if URL has a sci hash, jump to atlas, highlight, and
   // open the modal.
-  if (readHash()) { go(2); highlightAtlas(readHash()); openDetailModal(readHash()); }
+  if (readHash()) { goSnap(2); highlightAtlas(readHash()); openDetailModal(readHash()); }
   // Admin overlay routing: #admin=system|logs|tools opens the admin
   // screen with that sub-tab. Clearing the hash closes it.
   function readAdminHash() {
@@ -3369,6 +3369,19 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
   // or the masthead eyebrow. aria-hidden drives the CSS fade/slide.
   function openAbout()  { document.getElementById('about-modal').setAttribute('aria-hidden', 'false'); }
   function closeAbout() { document.getElementById('about-modal').setAttribute('aria-hidden', 'true'); }
+  // goSnap: like go(), but disables the CSS transition first and restores it
+  // after the modal animation completes. This works around a Chromium
+  // compositor bug where creating the detail-modal's translate3d layer while
+  // a transform transition is running on .views causes the transition to
+  // overshoot its target by exactly one viewport width (390px), leaving the
+  // wrong view visible after the modal closes.
+  function goSnap(i) {
+    var v = document.getElementById('views');
+    v.style.transition = 'none';
+    go(i);
+    v.offsetWidth; // force reflow so the snap takes effect immediately
+    setTimeout(function () { v.style.transition = ''; }, 600);
+  }
   function syncRouter() {
     window.__lastHashchange = Date.now();
     var sci = readHash();
@@ -3376,7 +3389,7 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     if (location.hash === '#about') openAbout(); else closeAbout();
     if (adm) { openAdmin(adm); return; }
     closeAdmin();
-    if (sci) { go(2); highlightAtlas(sci); openDetailModal(sci); }
+    if (sci) { goSnap(2); highlightAtlas(sci); openDetailModal(sci); }
     else     { highlightAtlas(null); closeDetailModal(); }
   }
   if (readAdminHash()) openAdmin(readAdminHash());
