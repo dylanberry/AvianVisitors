@@ -1702,7 +1702,7 @@
     }
     container.innerHTML = '';
 
-    if (DATA.timelineError) {
+    if (DATA.timelineError && !DATA.timeline) {
       container.innerHTML = '<div class="timeline-error">Couldn\'t load timeline.<br><small>Check your connection and try again.</small></div>';
       return;
     }
