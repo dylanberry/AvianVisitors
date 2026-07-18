@@ -98,7 +98,11 @@
   .view#v0, .view#v1 { overflow: hidden; padding: 8px 32px 88px; }
   .view#v0 { display: flex; }
   .view#v1 { display: flex; flex-direction: column; }
-  @media (max-width: 700px) { .view { padding: 8px 18px 132px; } .view#v0, .view#v1 { padding: 8px 16px 88px; } }
+  @media (max-width: 700px) {
+    .view { padding: 8px 18px 132px; }
+    .view#v0, .view#v1 { padding: 8px 16px 88px; }
+    .view#v1 { overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  }
 
   /* ============ Top bar - window picker (left) + menu button (right). ============
      Visible on every view; the picker is the universal time-window control. */
@@ -517,6 +521,25 @@
   }
   .menu-save-row button:disabled { opacity: 0.4; cursor: default; }
 
+  /* Logout - sits at the foot of the unlocked drawer. Quieter than the
+     solid-ink save button: same shape and type, but on paper-2 with an
+     accent hover, matching the lock-row / menu-links vocabulary. */
+  .logout-row {
+    display: flex; justify-content: flex-end;
+    margin-top: 10px; padding: 0 4px;
+  }
+  .logout-row button {
+    background: var(--paper-2); color: var(--ink); border: 0;
+    padding: 7px 14px; border-radius: 6px;
+    font: 10px ui-monospace, Menlo, monospace; letter-spacing: 0.14em;
+    text-transform: lowercase; cursor: pointer;
+    box-shadow: var(--raised);
+    transition: transform 160ms ease, color 160ms ease;
+  }
+  .logout-row button:hover {
+    color: var(--accent); transform: translateY(-1px);
+  }
+
   /* ============ View 1 - Collage (Galliformes-style poster) ============
      Viewport-fit, no scroll. The shared static-head provides the title;
      this view's content is just the cluster of bird cutouts which fills
@@ -667,6 +690,10 @@
     .stats-tl-label { font-size: 11px; }
     .stats-tl-label .sci { font-size: 9px; }
     .stats-tl-xtick { font-size: 8px; }
+    /* Single-column grid exceeds the viewport; let it keep its natural
+       height so #v1 (now overflow-y: auto) scrolls to reveal the side
+       lists. Desktop keeps flex: 1 1 auto / 0 1 auto untouched. */
+    .stats-grid { flex: 0 0 auto; }
   }
   /* Desktop two-column: size the grid to the side panel's content height
      (the timeline stretches to match it) and centre it vertically, so the
@@ -833,6 +860,13 @@
   .stats-side li.sync-hi span:not(.yr):not(.ct) { color: var(--accent); }
   .stats-side li .yr { font: 9.5px ui-monospace, Menlo, monospace; color: var(--accent-2); letter-spacing: 0.04em; }
   .stats-side li .ct { font: 11px ui-monospace, Menlo, monospace; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 700px) {
+    /* Unconstrain the side panel so both sections stack and the whole
+       stats grid drives #v1's scroll. Must come after the base
+       .stats-side rule for correct cascade order. */
+    .stats-side { max-height: none; }
+  }
 
   /* (Histogram strip removed - charts moved into the stats-grid LEFT
      column as full-bleed chart cards. See .stats-charts above.) */
