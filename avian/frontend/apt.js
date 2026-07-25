@@ -114,7 +114,15 @@
       }
     }
   }
-  btns.forEach(function (b) { b.addEventListener('click', function () { go(+b.dataset.i); }); });
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var i = +b.dataset.i;
+      go(i);
+      var nameOf = ['collage', 'stats', 'atlas', 'timeline'];
+      var h = serializeHash({ view: nameOf[i], hours: currentHours });
+      if (location.hash !== h) location.hash = h;
+    });
+  });
 
   // ---- Window picker ----
   // Persist selections across reloads so a returning visitor lands on the
@@ -220,6 +228,9 @@
       currentHours = +b.dataset.h;
       writeLS('bird:window', String(currentHours));
       syncPill(winPick);
+      var nameOf = ['collage', 'stats', 'atlas', 'timeline'];
+      var h = serializeHash({ view: nameOf[currentView], hours: currentHours, sci: parseHash().sci });
+      if (location.hash !== h) location.hash = h;
       // Actual data refresh is wired below via refreshRecent().
     });
   });
@@ -840,7 +851,8 @@
   collage.addEventListener('click', function (ev) {
     var hit = maskHitTest(ev.clientX, ev.clientY);
     if (!hit) return;
-    location.hash = '#sci=' + encodeURIComponent(hit.data.sci);
+    var h = serializeHash({ view: 'atlas', hours: currentHours, sci: hit.data.sci });
+    if (location.hash !== h) location.hash = h;
     go(2);
   });
 
@@ -3547,16 +3559,23 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
   applyHashState();
   window.addEventListener('hashchange', applyHashState);
 
-  // Modal interactions: backdrop / close button -> clear the hash.
+  // Modal interactions: backdrop / close button -> drop sci from the hash
+  // (stays on atlas). Only these listeners write the hash on close -
+  // closeDetailModal never does, so hashchange -> applyHashState ->
+  // closeDetailModal cannot loop.
   document.getElementById('detail-modal').addEventListener('click', function (ev) {
     if (ev.target.dataset && ev.target.dataset.close === '1') {
-      if (location.hash) { location.hash = ''; } else { closeDetailModal(); }
+      if (!parseHash().sci) { closeDetailModal(); return; }
+      var h = serializeHash({ view: 'atlas', hours: currentHours });
+      if (location.hash !== h) { location.hash = h; } else { closeDetailModal(); }
     }
   });
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape' &&
         document.getElementById('detail-modal').getAttribute('aria-hidden') === 'false') {
-      if (location.hash) { location.hash = ''; } else { closeDetailModal(); }
+      if (!parseHash().sci) { closeDetailModal(); return; }
+      var h = serializeHash({ view: 'atlas', hours: currentHours });
+      if (location.hash !== h) { location.hash = h; } else { closeDetailModal(); }
     }
   });
 
@@ -4034,8 +4053,9 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
   // propagation themselves.
   function jumpToSci(sci) {
     if (!sci) return;
-    if (location.hash !== '#sci=' + encodeURIComponent(sci)) {
-      location.hash = '#sci=' + encodeURIComponent(sci);
+    var h = serializeHash({ view: 'atlas', hours: currentHours, sci: sci });
+    if (location.hash !== h) {
+      location.hash = h;
     } else {
       // Same hash -> still re-highlight (the user clicked it again).
       go(2); highlightAtlas(sci);
