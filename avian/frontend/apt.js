@@ -3476,9 +3476,6 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     });
   }
 
-  // Initial load: if URL has a sci hash, jump to atlas, highlight, and
-  // open the modal.
-  if (readHash()) { goSnap(2); highlightAtlas(readHash()); openDetailModal(readHash()); }
   // Admin overlay routing: #admin=system|logs|tools opens the admin
   // screen with that sub-tab. Clearing the hash closes it.
   function readAdminHash() {
@@ -3501,19 +3498,54 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     v.offsetWidth; // force reflow so the snap takes effect immediately
     setTimeout(function () { v.style.transition = ''; }, 600);
   }
-  function syncRouter() {
+  // Central hash router: every piece of shareable state (view, window,
+  // species, admin, about) lives in the hash, so Back/Forward restores
+  // the full UI. Called once at startup and on every hashchange.
+  function applyHashState() {
     window.__lastHashchange = Date.now();
-    var sci = readHash();
-    var adm = readAdminHash();
-    if (location.hash === '#about') openAbout(); else closeAbout();
-    if (adm) { openAdmin(adm); return; }
+    var parsed = parseHash();
+    if (parsed.about) openAbout(); else closeAbout();
+    // Admin overlay takes precedence over everything else.
+    if (parsed.admin) { openAdmin(parsed.admin); return; }
     closeAdmin();
-    if (sci) { goSnap(2); highlightAtlas(sci); openDetailModal(sci); }
-    else     { highlightAtlas(null); closeDetailModal(); }
+    // WINDOW: query-style hashes are fully self-describing (missing or
+    // invalid hours resolves to 24), so apply a differing window to make
+    // Back/Forward across windows genuinely restore it. NEVER writeLS
+    // here - a shared link's window applies to this session only, not to
+    // the recipient's saved preference. Legacy (#sci=), empty, and
+    // admin/about hashes arrive with hours:null and skip this entirely,
+    // so legacy links still respect the recipient's window.
+    if (parsed.hours !== null && parsed.hours !== currentHours) {
+      currentHours = parsed.hours;
+      winBtns.forEach(function (b) {
+        b.setAttribute('aria-current', (+b.dataset.h === currentHours) ? 'true' : 'false');
+      });
+      syncPill(winPick);
+      refreshRecent(true);
+    }
+    // SPECIES/VIEW
+    if (parsed.sci) {
+      goSnap(2);
+      highlightAtlas(parsed.sci);
+      // Guard: modal already open for this exact sci -> still highlight,
+      // but skip the re-open (prevents pose-probe refires and morph
+      // re-animation on picker clicks / Back-Forward to the same bird).
+      var modalOpen = document.getElementById('detail-modal').getAttribute('aria-hidden') === 'false';
+      if (!(modalOpen && document.getElementById('modalSci').textContent === parsed.sci)) {
+        openDetailModal(parsed.sci);
+      }
+    } else {
+      // No sci: apply the parsed view (stay put when the hash names no
+      // view), clear any card highlight, and close the modal.
+      var HASH_VIEW_INDEX = { collage: 0, stats: 1, atlas: 2, timeline: 3 };
+      if (parsed.view) go(HASH_VIEW_INDEX[parsed.view]);
+      highlightAtlas(null);
+      closeDetailModal();
+    }
   }
-  if (readAdminHash()) openAdmin(readAdminHash());
-  if (location.hash === '#about') openAbout();
-  window.addEventListener('hashchange', syncRouter);
+  // Initial load: every piece of shareable state arrives via the hash.
+  applyHashState();
+  window.addEventListener('hashchange', applyHashState);
 
   // Modal interactions: backdrop / close button -> clear the hash.
   document.getElementById('detail-modal').addEventListener('click', function (ev) {
@@ -3529,7 +3561,7 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
   });
 
   // About popup: backdrop / close / explore button all carry data-close,
-  // which clears the hash and routes through syncRouter -> closeAbout.
+  // which clears the hash and routes through applyHashState -> closeAbout.
   // The masthead eyebrow opens it; Escape dismisses it.
   document.getElementById('about-modal').addEventListener('click', function (ev) {
     if (ev.target.dataset && ev.target.dataset.close === '1') {
