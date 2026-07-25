@@ -3510,12 +3510,30 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     v.offsetWidth; // force reflow so the snap takes effect immediately
     setTimeout(function () { v.style.transition = ''; }, 600);
   }
+  // Hook into the window picker so the data refreshRecent() refetches on
+  // change. Pass animate=true so the collage blooms (the silent poll passes
+  // nothing).
+  winBtns.forEach(function (b) {
+    b.addEventListener('click', function () { refreshRecent(true); });
+  });
+
+  // Out-of-window escalation guard (used by the renderAtlas wrapper far
+  // below and reset by applyHashState). Declared HERE, above the startup
+  // applyHashState() call, because var initializers placed near the
+  // wrapper would run AFTER that first routing pass and wipe the sci
+  // tracking it recorded (same hoisting lesson as the Todo 2 codec).
+  var __escalatedSci = null; // sci the one-shot escalation has latched for
+  var __prevHashSci = null;  // sci seen by the previous applyHashState pass
   // Central hash router: every piece of shareable state (view, window,
   // species, admin, about) lives in the hash, so Back/Forward restores
   // the full UI. Called once at startup and on every hashchange.
   function applyHashState() {
     window.__lastHashchange = Date.now();
     var parsed = parseHash();
+    // Escalation guard bookkeeping: a different (or absent) sci re-arms
+    // the one-shot out-of-window escalation so the new sci can bounce.
+    if (parsed.sci !== __prevHashSci) __escalatedSci = null;
+    __prevHashSci = parsed.sci;
     if (parsed.about) openAbout(); else closeAbout();
     // Admin overlay takes precedence over everything else.
     if (parsed.admin) { openAdmin(parsed.admin); return; }
@@ -4081,5 +4099,36 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     _origRenderAtlas(animate);
     var s = readHash();
     if (s) highlightAtlas(s);
+    // Out-of-window escalation: a shared link whose species isn't in the
+    // current window renders no card, so bounce the window to ALL - once
+    // per sci (the guard latches until applyHashState re-arms it on a sci
+    // change), never on empty-data renders (the lifelist guard is the
+    // load gate), never to localStorage, and via replaceState only (push
+    // would create a Back-button trap that re-triggers the escalation).
+    var escSci = parseHash().sci;
+    var cardExists = !!document.querySelector('.bird-card[data-sci="' + (escSci || '').replace(/"/g, '\"') + '"]');
+    if (!escSci || currentHours >= 1000000 || __escalatedSci === escSci || cardExists) return;
+    if (!(DATA.lifelist && DATA.lifelist.species && DATA.lifelist.species.length)) return;
+    __escalatedSci = escSci;
+    winBtns.forEach(function (b) {
+      b.setAttribute('aria-current', (+b.dataset.h === 1000000) ? 'true' : 'false');
+    });
+    syncPill(winPick);
+    currentHours = 1000000; // session-only: no writeLS
+    history.replaceState(null, '', serializeHash({ view: 'atlas', hours: 1000000, sci: escSci }));
+    // replaceState does not fire hashchange, so applyHashState does NOT
+    // re-run - the aria-current/syncPill/currentHours updates above are
+    // the entire state application.
+    refreshRecent(true).then(function () {
+      // Patch ONLY the modal's window stat; never re-run openDetailModal.
+      if (currentHours !== 1000000) return; // fetch discarded mid-flight
+      var escModal = document.getElementById('detail-modal');
+      if (!escModal || escModal.getAttribute('aria-hidden') !== 'false') return;
+      if (document.getElementById('modalSci').textContent !== escSci) return;
+      // Mirror openDetailModal's window-stat visibility: ALL hides it.
+      document.getElementById('modalWindowStat').style.display = 'none';
+      var winRow = ((DATA.recent && DATA.recent.species) || []).filter(function (x) { return x.sci === escSci; })[0];
+      document.getElementById('modalWindow').textContent = (winRow ? +winRow.n : 0).toLocaleString();
+    });
   };
 })();
