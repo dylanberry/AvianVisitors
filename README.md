@@ -2,7 +2,7 @@
 
 *A live bird collage from your window.*
 
-See it running at [bird.onethreenine.net](https://bird.onethreenine.net).
+See it running at [birds.spadaberry.net](https://birds.spadaberry.net).
 
 <img alt="Bird Up! collage" src="docs/thumb.png" />
 

@@ -62,7 +62,7 @@ Pick how the frame gets its birds:
 ./install.sh --bird-weather --zip 94107
 
 # Bird mic hosted at a public URL: point the frame straight at it.
-./install.sh --image-url https://bird.onethreenine.net/frame.png?k=YOUR_FRAME_KEY
+./install.sh --image-url https://birds.spadaberry.net/frame.png?k=YOUR_FRAME_KEY
 ```
 
 Each one enables SPI + I2C, installs the deps and a systemd timer, writes `~/.birdframe/config.toml`, and reboots once to bring SPI up. Full options live in [`config.example.toml`](config.example.toml).

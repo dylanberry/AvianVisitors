@@ -10,7 +10,7 @@ shoot = true
 # Or fetch a ready-made PNG instead of rendering here (lighter, but needs
 # something that serves a frame image, e.g. a public Cloudflare Worker):
 # shoot = false
-# image_url = "https://bird.onethreenine.net/frame.png?k=YOUR_FRAME_KEY"
+# image_url = "https://birds.spadaberry.net/frame.png?k=YOUR_FRAME_KEY"
 # Or read a PNG a sibling process drops next to us:
 # image = "~/.birdframe/frame.png"
 
