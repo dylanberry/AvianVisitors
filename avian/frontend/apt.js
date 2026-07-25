@@ -2382,10 +2382,100 @@
   // location.hash = '#sci=<name>'. On arrival we switch to the atlas
   // view, highlight the matching card, AND open the detail modal with
   // expanded info (Wikipedia summary, taxonomy, all past recordings).
+  // ---- Hash codec ----
+  // parseHash() reads location.hash and returns a normalized state object:
+  //   { view, hours, sci, admin, about, legacy }
+  // Semantics:
+  //   (a) empty hash / '#' / no recognized keys -> all-null state.
+  //   (b) '#admin=<section>' -> { admin: <section> }.
+  //   (c) '#about' -> { about: true }.
+  //   (d) LEGACY '#sci=<name>' (the original shared-link format) ->
+  //       { legacy: true, sci, view: 'atlas', hours: null }. hours: null
+  //       means "keep the recipient's current window", so every existing
+  //       shared link behaves exactly as before.
+  //   (e) QUERY-STYLE (any of view=/hours=/sci= keys, never starting with
+  //       '#sci='): view must be one of collage|stats|atlas|timeline
+  //       (invalid -> null); sci is decodeURIComponent'd; hours resolves to
+  //       24 when the key is missing OR invalid (a query-style hash is fully
+  //       self-describing). Valid hours keys: 1/12/24/168/all, with
+  //       'all' -> 1000000.
+  // parseHash must NEVER throw: decodeURIComponent failures become null.
+  var HASH_VIEWS = { collage: true, stats: true, atlas: true, timeline: true };
+  var HASH_HOURS = { '1': 1, '12': 12, '24': 24, '168': 168, 'all': 1000000 };
+  function safeDecode(s) {
+    try { return decodeURIComponent(s); } catch (e) { return null; }
+  }
+  function parseHash() {
+    var state = { view: null, hours: null, sci: null, admin: null, about: false, legacy: false };
+    var h = location.hash || '';
+    if (h.length < 2) return state; // '' or '#'
+    var mAdmin = h.match(/^#admin=([a-z]+)/);
+    if (mAdmin) { state.admin = mAdmin[1]; return state; }
+    if (h === '#about') { state.about = true; return state; }
+    if (h.indexOf('#sci=') === 0) {
+      var m = h.match(/^#sci=([^&]+)/);
+      if (m) {
+        state.legacy = true;
+        state.view = 'atlas';
+        state.sci = safeDecode(m[1]);
+        state.hours = null; // legacy links keep the recipient's current window
+      }
+      return state;
+    }
+    // Query-style: split on '&', then on the first '=' of each pair.
+    var recognized = false;
+    var hoursVal = null;
+    var pairs = h.substring(1).split('&');
+    for (var i = 0; i < pairs.length; i++) {
+      var eq = pairs[i].indexOf('=');
+      var k = eq === -1 ? pairs[i] : pairs[i].substring(0, eq);
+      var v = eq === -1 ? '' : pairs[i].substring(eq + 1);
+      if (k === 'view') {
+        recognized = true;
+        if (HASH_VIEWS[v]) state.view = v;
+      } else if (k === 'hours') {
+        recognized = true;
+        if (HASH_HOURS[v] !== undefined) hoursVal = HASH_HOURS[v];
+      } else if (k === 'sci') {
+        recognized = true;
+        var d = safeDecode(v);
+        state.sci = d ? d : null;
+      }
+    }
+    if (!recognized) return state; // no recognized keys -> all-null
+    // Query-style hashes are fully self-describing: missing or invalid
+    // hours resolves to the 24h default.
+    state.hours = hoursVal !== null ? hoursVal : 24;
+    return state;
+  }
+  // serializeHash({ view, hours, sci }) builds a query-style fragment,
+  // omitting defaults (view=collage omitted, hours=24 omitted, 1000000
+  // serialized as 'all'). Returns '' when everything is default/empty.
+  // Emits view=atlas whenever sci is present (the detail modal only exists
+  // on the atlas view) so no new-style hash ever starts with '#sci=',
+  // keeping the legacy test unambiguous.
+  function serializeHash(state) {
+    state = state || {};
+    var view = state.view || null;
+    var hours = (state.hours === undefined) ? null : state.hours;
+    var sci = state.sci || null;
+    if (sci) view = 'atlas';
+    var parts = [];
+    if (view && view !== 'collage') parts.push('view=' + view);
+    if (hours !== null && hours !== 24) {
+      parts.push('hours=' + (hours === 1000000 ? 'all' : String(hours)));
+    }
+    if (sci) parts.push('sci=' + encodeURIComponent(sci));
+    return parts.length ? '#' + parts.join('&') : '';
+  }
+  // QA-only debug export so the hermetic test rig can call the pure
+  // functions through the IIFE boundary. Gated behind ?qa=1.
+  if (location.search.indexOf('qa=1') !== -1) {
+    window.__parseHash = parseHash;
+    window.__serializeHash = serializeHash;
+  }
   function readHash() {
-    var m = location.hash.match(/^#sci=([^&]+)/);
-    if (!m) return null;
-    return decodeURIComponent(m[1]);
+    return parseHash().sci;
   }
   function highlightAtlas(sci) {
     var grid = document.getElementById('atlasGrid');
@@ -3378,8 +3468,7 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
   // Admin overlay routing: #admin=system|logs|tools opens the admin
   // screen with that sub-tab. Clearing the hash closes it.
   function readAdminHash() {
-    var m = location.hash.match(/^#admin=([a-z]+)/);
-    return m ? m[1] : null;
+    return parseHash().admin;
   }
   // #about - brief explainer popup; reached via /about (302 -> /#about)
   // or the masthead eyebrow. aria-hidden drives the CSS fade/slide.
