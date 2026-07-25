@@ -41,6 +41,13 @@ $ALLOWED = [
     'LATITUDE'           => ['type' => 'float', 'min' => -90,  'max' => 90, 'restart' => true],
     'LONGITUDE'          => ['type' => 'float', 'min' => -180, 'max' => 180, 'restart' => true],
     'SITE_NAME'          => ['type' => 'string', 'maxlen' => 60],
+    // Model selection. Only classifiers whose .tflite + labels ship with
+    // BirdNET-Pi are listed - offering a model whose files are absent from
+    // ~/BirdNET-Pi/model/ would crash birdnet_analysis on restart.
+    'MODEL'              => ['type' => 'enum',  'values' => ['BirdNET_GLOBAL_6K_V2.4_Model_FP16', 'BirdNET_6K_GLOBAL_MODEL'], 'restart' => true],
+    // Species-range (mdata) model version: 1 = original V2.4 range model,
+    // 2 = updated eBird-trained range model. Both ship with BirdNET-Pi.
+    'DATA_MODEL_VERSION' => ['type' => 'int',   'min' => 1,    'max' => 2,    'restart' => true],
 ];
 
 function read_conf(string $path): array {
