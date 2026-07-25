@@ -88,6 +88,14 @@ SWALLOW_GENERA = {
     "Tachycineta", "Riparia", "Progne", "Petrochelidon", "Stelgidopteryx",
 }
 
+# Swifts are not swallows, but Gemini draws them as Barn Swallows
+# (forked tail, pale throat) unless the same anti-reference is attached.
+# Chaetura pelagica regen 2026-07-23: both poses came back as swallows
+# even with a strong species note; the anti-ref broke the collapse.
+SWIFT_GENERA = {
+    "Chaetura",
+}
+
 # Genera where Gemini's prior collapses to American Robin (gray back,
 # orange breast) for ground-foraging thrushes. Add as needed.
 ROBIN_GENERA = set()  # placeholder for future use
@@ -158,6 +166,9 @@ GENUS_STYLE_PERCHED = {
 }
 
 # Genera that should use large_flight (instead of small_flight) for pose 2.
+# Chaetura is here not for size but for silhouette: the small_flight style
+# print is swallows with forked tails, which drifts swifts back to the
+# swallow shape the barnswallow anti-ref is fighting.
 LARGE_FLIGHT_GENERA = {
     "Tyto","Bubo","Asio","Megascops","Athene","Strix","Glaucidium","Aegolius",
     "Anas","Aix","Mareca","Spatula","Branta","Anser","Cygnus","Aythya",
@@ -166,6 +177,7 @@ LARGE_FLIGHT_GENERA = {
     "Limosa","Numenius","Himantopus","Recurvirostra",
     "Buteo","Accipiter","Aquila","Circus","Falco","Cathartes","Coragyps",
     "Haliaeetus","Pandion","Elanus","Gymnogyps","Corvus",
+    "Chaetura",
 }
 
 
@@ -206,6 +218,7 @@ ANTI_REFS = {
 ANTI_REF_TRIGGERS = (
     (JAY_GENERA, "bluejay", "Cyanocitta cristata"),
     (SWALLOW_GENERA, "barnswallow", "Hirundo rustica"),
+    (SWIFT_GENERA, "barnswallow", None),
 )
 
 USER_AGENT = "BirdUp/1.0 (https://github.com/dylanberry/BirdUp)"
