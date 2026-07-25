@@ -203,6 +203,17 @@
   winBtns.forEach(function (b) {
     b.setAttribute('aria-current', (+b.dataset.h === currentHours) ? 'true' : 'false');
   });
+  // A shared link's window applies to this load only - NEVER writeLS here,
+  // or a shared link would overwrite the recipient's saved preference.
+  // parseHash is hoisted; legacy/admin/about/empty hashes return hours:null.
+  var h0 = parseHash();
+  if (h0.hours !== null && !h0.admin && !h0.about) {
+    currentHours = h0.hours;
+    winBtns.forEach(function (b) {
+      b.setAttribute('aria-current', (+b.dataset.h === currentHours) ? 'true' : 'false');
+    });
+    syncPill(winPick);
+  }
   winBtns.forEach(function (b) {
     b.addEventListener('click', function () {
       winBtns.forEach(function (x) { x.setAttribute('aria-current', x === b ? 'true' : 'false'); });
@@ -2400,12 +2411,15 @@
   //       self-describing). Valid hours keys: 1/12/24/168/all, with
   //       'all' -> 1000000.
   // parseHash must NEVER throw: decodeURIComponent failures become null.
-  var HASH_VIEWS = { collage: true, stats: true, atlas: true, timeline: true };
-  var HASH_HOURS = { '1': 1, '12': 12, '24': 24, '168': 168, 'all': 1000000 };
+  // Tables stay inside the function: parseHash is called from the win-picker
+  // init before this point in the IIFE executes - function declarations
+  // hoist, var initializers do not.
   function safeDecode(s) {
     try { return decodeURIComponent(s); } catch (e) { return null; }
   }
   function parseHash() {
+    var HASH_VIEWS = { collage: true, stats: true, atlas: true, timeline: true };
+    var HASH_HOURS = { '1': 1, '12': 12, '24': 24, '168': 168, 'all': 1000000 };
     var state = { view: null, hours: null, sci: null, admin: null, about: false, legacy: false };
     var h = location.hash || '';
     if (h.length < 2) return state; // '' or '#'
