@@ -3510,13 +3510,6 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     v.offsetWidth; // force reflow so the snap takes effect immediately
     setTimeout(function () { v.style.transition = ''; }, 600);
   }
-  // Hook into the window picker so the data refreshRecent() refetches on
-  // change. Pass animate=true so the collage blooms (the silent poll passes
-  // nothing).
-  winBtns.forEach(function (b) {
-    b.addEventListener('click', function () { refreshRecent(true); });
-  });
-
   // Out-of-window escalation guard (used by the renderAtlas wrapper far
   // below and reset by applyHashState). Declared HERE, above the startup
   // applyHashState() call, because var initializers placed near the
