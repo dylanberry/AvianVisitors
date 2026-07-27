@@ -1693,6 +1693,38 @@
   .pose-toggle button:hover .tip { opacity: 1; }
   .pose-toggle[data-unavailable="true"] { display: none; }
   .pose-toggle button[data-unavailable="true"] { display: none; }
+  /* Sex toggle - bottom-right corner of the modal sketch, mirrors the
+     pose toggle's recipe (recessed well, shared .seg-pill, tip bubble)
+     but anchored right so the two never overlap. */
+  .sex-toggle {
+    position: absolute; left: auto; right: 10px; bottom: 10px;
+    display: inline-flex; padding: 3px;
+    background: var(--paper-2); border-radius: 999px;
+    box-shadow: var(--recess);
+    z-index: 2;
+  }
+  .sex-toggle button {
+    background: transparent; border: 0; color: var(--ink-soft);
+    min-width: 30px; height: 26px; padding: 0 6px; border-radius: 999px;
+    cursor: pointer; position: relative; z-index: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; line-height: 1;
+    transition: color 200ms ease;
+  }
+  .sex-toggle button:hover { color: var(--ink); }
+  .sex-toggle button[aria-current="true"] { color: var(--ink); }
+  .sex-toggle button .tip {
+    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%); white-space: nowrap;
+    font: 9px ui-monospace, Menlo, monospace; letter-spacing: 0.14em;
+    text-transform: lowercase; color: var(--ink-soft);
+    background: var(--paper); padding: 3px 8px; border-radius: 4px;
+    box-shadow: var(--raised);
+    opacity: 0; pointer-events: none; transition: opacity 160ms ease;
+  }
+  .sex-toggle button:hover .tip { opacity: 1; }
+  .sex-toggle[data-unavailable="true"] { display: none; }
+  .sex-toggle button[data-unavailable="true"] { display: none; }
   .modal-info h2 {
     margin: 4px 36px 0 0;
     font: 700 26px/1.1 ui-serif, "Iowan Old Style", "Bookman Old Style", Georgia, serif;
