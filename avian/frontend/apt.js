@@ -229,7 +229,7 @@
       writeLS('bird:window', String(currentHours));
       syncPill(winPick);
       var nameOf = ['collage', 'stats', 'atlas', 'timeline'];
-      var h = serializeHash({ view: nameOf[currentView], hours: currentHours, sci: parseHash().sci });
+      var h = serializeHash({ view: nameOf[currentView], hours: currentHours, sci: parseHash().sci, sex: parseHash().sex });
       if (location.hash !== h) location.hash = h;
       // Actual data refresh is wired below via refreshRecent().
     });
@@ -330,8 +330,12 @@
                        // eased on narrow screens where birds are smaller.
   var FLY_PROB = 0.15; // chance a bird shows in its flight pose (rare); perched
                        // otherwise. Rolled once per window appearance.
+  var FEM_PROB = 0.3;  // chance a dimorphic bird shows as female when a female
+                       // render exists. Rolled BEFORE the pose roll so flight
+                       // is picked from the same sex's file set.
   var collagePose = {}; // sci -> 1 perched | 2 flight, persisted across polls;
                         // cleared when a bird leaves the window so it rerolls.
+  var collageSex = {};  // sci -> 'm' | 'f', same lifetime as collagePose.
 
   // Decode and cache each mask once. Sparse cell-list form (only "on"
   // cells) makes collision tests linear in opaque area, not total area.
@@ -537,29 +541,40 @@
     // without dwarfing it.
     var tiles = items.map(function (s) {
       var base = slugify(s.sci);
+      // Sex: male by default, sometimes female (FEM_PROB), and only when a
+      // female render exists (DIMS-gated, same as the modal toggle - the
+      // server 200s on male fallback, so a probe could never tell).
+      var sex = collageSex[s.sci];
+      if (sex === undefined) {
+        sex = (DIMS[base + '-f'] && Math.random() < FEM_PROB) ? 'f' : 'm';
+        collageSex[s.sci] = sex;
+      }
+      var slugBase = sex === 'f' ? base + '-f' : base;
       // Pose: perched by default, rarely flight (FLY_PROB), and only if a
       // flight render exists. Flight uses the <slug>-2 mask/aspect/image so
       // the wings-spread silhouette nests correctly.
       var pose = collagePose[s.sci];
       if (pose === undefined) {
-        pose = (DIMS[base + '-2'] && Math.random() < FLY_PROB) ? 2 : 1;
+        pose = (DIMS[slugBase + '-2'] && Math.random() < FLY_PROB) ? 2 : 1;
         collagePose[s.sci] = pose;
       }
-      var slug = pose === 2 ? base + '-2' : base;
+      var slug = pose === 2 ? slugBase + '-2' : slugBase;
       var mask = loadMask(slug);
-      if (!mask && pose === 2) { pose = 1; slug = base; mask = loadMask(slug); collagePose[s.sci] = 1; }
+      // Mask-miss downgrade stays within the same sex.
+      if (!mask && pose === 2) { pose = 1; slug = slugBase; mask = loadMask(slug); collagePose[s.sci] = 1; }
       if (!mask) return null;
       var d = DIMS[slug];
       var n = +s.n; if (!n || isNaN(n)) n = 1;
       return {
-        mask: mask, data: s, pose: pose,
+        mask: mask, data: s, pose: pose, sex: sex,
         ar: d ? d[0] / d[1] : 1.4,
         score: Math.pow(Math.max(1, n), T.countExp),
       };
     }).filter(Boolean);
-    // Reroll on re-entry: forget pose choices for species no longer in window.
+    // Reroll on re-entry: forget pose/sex choices for species no longer in window.
     var present = {}; items.forEach(function (s) { present[s.sci] = 1; });
     Object.keys(collagePose).forEach(function (k) { if (!present[k]) delete collagePose[k]; });
+    Object.keys(collageSex).forEach(function (k) { if (!present[k]) delete collageSex[k]; });
 
     // Step 2: normalise so sum(area) ≈ budget. Then floor each tile
     // at minArea so even a 1-call bird stays legible.
@@ -647,6 +662,7 @@
       var img = './avian/api/cutout.php?sci=' + encodeURIComponent(s.sci) +
         (s.com ? '&com=' + encodeURIComponent(s.com) : '') +
         (r.pose === 2 ? '&pose=2' : '') +
+        (r.sex === 'f' ? '&sex=f' : '') +
         '&v=' + IMG_VERSION;
       var btn = document.createElement('button');
       btn.className = 'gtile';
@@ -852,7 +868,7 @@
   collage.addEventListener('click', function (ev) {
     var hit = maskHitTest(ev.clientX, ev.clientY);
     if (!hit) return;
-    var h = serializeHash({ view: 'atlas', hours: currentHours, sci: hit.data.sci });
+    var h = serializeHash({ view: 'atlas', hours: currentHours, sci: hit.data.sci, sex: hit.sex });
     if (location.hash !== h) location.hash = h;
     go(2);
   });
@@ -3705,8 +3721,14 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
       // Guard: modal already open for this exact sci -> still highlight,
       // but skip the re-open (prevents pose-probe refires and morph
       // re-animation on picker clicks / Back-Forward to the same bird).
+      // The guard compares the (sci, sex) PAIR: same sci but a different
+      // sex swaps the image in place via setModalSex (swap-fade + hash
+      // write, no re-open, no re-morph); only an exact pair match skips.
       var modalOpen = document.getElementById('detail-modal').getAttribute('aria-hidden') === 'false';
-      if (!(modalOpen && document.getElementById('modalSci').textContent === parsed.sci)) {
+      if (modalOpen && document.getElementById('modalSci').textContent === parsed.sci) {
+        var parsedSex = parsed.sex || 'm';
+        if (parsedSex !== modalVariant.sex) setModalSex(parsedSex);
+      } else {
         openDetailModal(parsed.sci, parsed.sex || 'm');
       }
     } else {
@@ -4214,9 +4236,9 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
   // first detections), stats timeline squares, and any future surface
   // that wants to point at a bird. Action chips inside cards stop
   // propagation themselves.
-  function jumpToSci(sci) {
+  function jumpToSci(sci, sex) {
     if (!sci) return;
-    var h = serializeHash({ view: 'atlas', hours: currentHours, sci: sci });
+    var h = serializeHash({ view: 'atlas', hours: currentHours, sci: sci, sex: sex });
     if (location.hash !== h) {
       location.hash = h;
     } else {
@@ -4260,7 +4282,7 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     });
     syncPill(winPick);
     currentHours = 1000000; // session-only: no writeLS
-    history.replaceState(null, '', serializeHash({ view: 'atlas', hours: 1000000, sci: escSci }));
+    history.replaceState(null, '', serializeHash({ view: 'atlas', hours: 1000000, sci: escSci, sex: parseHash().sex }));
     // replaceState does not fire hashchange, so applyHashState does NOT
     // re-run - the aria-current/syncPill/currentHours updates above are
     // the entire state application.
