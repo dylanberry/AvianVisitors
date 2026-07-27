@@ -260,6 +260,7 @@
   wireToggleAdvance(winPick);
   wireToggleAdvance(atlasSortEl);
   wireToggleAdvance(document.getElementById('modalPoseToggle'));
+  wireToggleAdvance(document.getElementById('modalSexToggle'));
   function syncAllPills() { syncPill(slider); syncPill(winPick); if (atlasSortEl) syncPill(atlasSortEl); }
   // The buttons size from text content; wait for fonts so width is correct.
   if (document.fonts && document.fonts.ready) {
@@ -2432,7 +2433,7 @@
   function parseHash() {
     var HASH_VIEWS = { collage: true, stats: true, atlas: true, timeline: true };
     var HASH_HOURS = { '1': 1, '12': 12, '24': 24, '168': 168, 'all': 1000000 };
-    var state = { view: null, hours: null, sci: null, admin: null, about: false, legacy: false };
+    var state = { view: null, hours: null, sci: null, admin: null, about: false, legacy: false, sex: null };
     var h = location.hash || '';
     if (h.length < 2) return state; // '' or '#'
     var mAdmin = h.match(/^#admin=([a-z]+)/);
@@ -2466,6 +2467,10 @@
         recognized = true;
         var d = safeDecode(v);
         state.sci = d ? d : null;
+      } else if (k === 'sex') {
+        recognized = true;
+        // Whitelisted like the API: only the literal 'f' is female.
+        state.sex = (v === 'f') ? 'f' : null;
       }
     }
     if (!recognized) return state; // no recognized keys -> all-null
@@ -2485,6 +2490,7 @@
     var view = state.view || null;
     var hours = (state.hours === undefined) ? null : state.hours;
     var sci = state.sci || null;
+    var sex = state.sex || null;
     if (sci) view = 'atlas';
     var parts = [];
     if (view && view !== 'collage') parts.push('view=' + view);
@@ -2492,6 +2498,9 @@
       parts.push('hours=' + (hours === 1000000 ? 'all' : String(hours)));
     }
     if (sci) parts.push('sci=' + encodeURIComponent(sci));
+    // sex is serialized last so a shared female link reads
+    // '#view=atlas&sci=...&sex=f'. Absent sex = male (the default).
+    if (sex === 'f') parts.push('sex=f');
     return parts.length ? '#' + parts.join('&') : '';
   }
   // QA-only debug export so the hermetic test rig can call the pure
@@ -2499,6 +2508,10 @@
   if (location.search.indexOf('qa=1') !== -1) {
     window.__parseHash = parseHash;
     window.__serializeHash = serializeHash;
+    // Live references so QA can inject/remove female variant keys before
+    // the real -f assets land (todo 12) - DIMS drives sex availability.
+    window.DIMS = DIMS;
+    window.MASKS = MASKS;
   }
   function readHash() {
     return parseHash().sci;
@@ -2628,7 +2641,7 @@
     }
   }
 
-  function sketchSrc(sci, pose) {
+  function sketchSrc(sci, pose, sex) {
     // Look up the common name from the lifelist so the worker's JIT
     // Gemini prompt is right for a never-pre-rendered species.
     var sp = ((DATA.lifelist && DATA.lifelist.species) || [])
@@ -2638,38 +2651,85 @@
       (com ? '&com=' + encodeURIComponent(com) : '') +
       '&v=' + SKETCH_VERSION;
     var n = +pose || 1;
-    return n > 1 ? base + '&pose=' + n : base;
+    if (n > 1) base += '&pose=' + n;
+    // Only the literal 'f' selects the female variant server-side;
+    // anything else (absent, 'm') takes the exact male chain.
+    if (sex === 'f') base += '&sex=f';
+    return base;
   }
-  function openDetailModal(sci) {
-    if (!sci) return;
-    var modal = document.getElementById('detail-modal');
-    var img = document.getElementById('modalImg');
+
+  // Shared modal variant state: which pose + sex the detail image shows.
+  // Both the pose and sex toggle handlers read/write this so switching
+  // one axis never resets the other, and the hash router (todo 9) drives
+  // sex changes through setModalSex().
+  var modalVariant = { pose: 1, sex: 'm' };
+
+  // Female variants are bundled files, so their availability is known
+  // from the DIMS mask table: the cutout.php fallback serves male bytes
+  // with HTTP 200 for a missing female, so HEAD probes can never detect
+  // absence. DIMS is the only honest signal - never probe for sex.
+  function femaleAvailable(base) {
+    return !!(DIMS[base + '-f'] || DIMS[base + '-f-2']);
+  }
+  function femalePoseAvailability(base) {
+    return { 1: !!DIMS[base + '-f'], 2: !!DIMS[base + '-f-2'] };
+  }
+  // Apply an availability map to the pose toggle: enable/disable the
+  // buttons, mark `pick` current, hide the whole toggle when there's no
+  // choice (single-option hide, same rule as the male probe flow).
+  function setPoseToggleState(available, pick) {
     var poseToggle = document.getElementById('modalPoseToggle');
     var poseBtns = [].slice.call(poseToggle.querySelectorAll('button'));
-
-    // Reset the toggle: assume nothing's available, set pose 1 (perched
-    // cutout - every species has it) as the optimistic default. HEAD
-    // probes below toggle each button on/off and pick the best default.
-    poseToggle.removeAttribute('data-unavailable');
+    var count = 0;
     poseBtns.forEach(function (b) {
-      b.setAttribute('data-unavailable', 'true');
-      b.setAttribute('aria-current', 'false');
+      var p = +b.dataset.pose;
+      if (available[p]) { b.removeAttribute('data-unavailable'); count++; }
+      else { b.setAttribute('data-unavailable', 'true'); }
+      b.setAttribute('aria-current', (p === pick) ? 'true' : 'false');
     });
-    var p1 = poseToggle.querySelector('button[data-pose="1"]');
-    if (p1) {
-      p1.removeAttribute('data-unavailable');
-      p1.setAttribute('aria-current', 'true');
+    if (count <= 1) poseToggle.setAttribute('data-unavailable', 'true');
+    else poseToggle.removeAttribute('data-unavailable');
+    syncPill(poseToggle);
+  }
+  function setSexToggleState(sex, available) {
+    var sexToggle = document.getElementById('modalSexToggle');
+    if (!sexToggle) return;
+    if (!available) {
+      sexToggle.setAttribute('data-unavailable', 'true');
+      return;
     }
-    img.src = sketchSrc(sci, 1);
-    img.alt = sci;
-
-    // Probe each pose's image with HEAD. Build a list of available
-    // poses, then pick the highest-numbered as the default (in-flight
-    // > perched, etc.). When only one pose remains, hide the toggle
-    // entirely - no choice means no UI.
+    sexToggle.removeAttribute('data-unavailable');
+    [].slice.call(sexToggle.querySelectorAll('button')).forEach(function (b) {
+      b.setAttribute('aria-current', (b.dataset.sex === sex) ? 'true' : 'false');
+    });
+    syncPill(sexToggle);
+  }
+  // The 180ms opacity swap both toggles share so a variant change reads
+  // as intentional rather than a hard cut.
+  function swapModalImage(src) {
+    var img = document.getElementById('modalImg');
+    img.classList.add('swapping');
+    setTimeout(function () {
+      img.src = src;
+      img.addEventListener('load', function once() {
+        img.classList.remove('swapping');
+        img.removeEventListener('load', once);
+      });
+    }, 180);
+  }
+  // Probe each male pose's image with HEAD (the pre-sex-variant flow,
+  // preserved: male poses are NOT fully DIMS-covered because non-bundled
+  // species resolve through the Wikipedia chain). preferredPose keeps the
+  // current pose across a sex switch when the probe says it's available;
+  // otherwise the highest-numbered available pose wins (in-flight >
+  // perched). When only one pose remains, hide the toggle entirely.
+  function probeMalePoses(sci, preferredPose) {
+    var poseToggle = document.getElementById('modalPoseToggle');
+    var poseBtns = [].slice.call(poseToggle.querySelectorAll('button'));
+    var img = document.getElementById('modalImg');
     var probes = poseBtns.map(function (b) {
       var pose = +b.dataset.pose;
-      return fetch(sketchSrc(sci, pose), { method: 'HEAD', cache: 'no-store' })
+      return fetch(sketchSrc(sci, pose, 'm'), { method: 'HEAD', cache: 'no-store' })
         .then(function (r) { return { pose: pose, btn: b, ok: r.ok }; })
         .catch(function () { return { pose: pose, btn: b, ok: false }; });
     });
@@ -2679,22 +2739,76 @@
       results.filter(function (r) { return !r.ok; }).forEach(function (r) {
         r.btn.setAttribute('data-unavailable', 'true');
       });
-      // Default to the highest-numbered available pose (in-flight if
-      // present, else fall back to perched).
-      var pick = available.sort(function (a, b) { return b.pose - a.pose; })[0];
+      var pick = null;
+      if (preferredPose) {
+        for (var i = 0; i < available.length; i++) {
+          if (available[i].pose === preferredPose) { pick = available[i]; break; }
+        }
+      }
+      if (!pick) pick = available.sort(function (a, b) { return b.pose - a.pose; })[0];
       if (pick) {
         poseBtns.forEach(function (b) {
           b.setAttribute('aria-current', b === pick.btn ? 'true' : 'false');
         });
-        img.src = sketchSrc(sci, pick.pose);
+        modalVariant.pose = pick.pose;
+        img.src = sketchSrc(sci, pick.pose, 'm');
       }
       // Single-option => hide the chrome.
       if (available.length <= 1) {
         poseToggle.setAttribute('data-unavailable', 'true');
+      } else {
+        poseToggle.removeAttribute('data-unavailable');
       }
       // Slide the white pill to the active button.
       syncPill(poseToggle);
     });
+  }
+
+  function openDetailModal(sci, sex) {
+    if (!sci) return;
+    sex = (sex === 'f') ? 'f' : 'm';
+    var modal = document.getElementById('detail-modal');
+    var img = document.getElementById('modalImg');
+    var poseToggle = document.getElementById('modalPoseToggle');
+    var poseBtns = [].slice.call(poseToggle.querySelectorAll('button'));
+    var base = slugify(sci);
+    // ♀ availability is DIMS-driven, never probed. Species without a
+    // female render get no sex UI and are pinned to male.
+    var hasFemale = femaleAvailable(base);
+    if (!hasFemale) sex = 'm';
+    modalVariant.sex = sex;
+    setSexToggleState(sex, hasFemale);
+
+    if (sex === 'f') {
+      // Female open (e.g. a sex=f deep-link): DIMS governs BOTH toggles,
+      // so the male HEAD probes are skipped entirely. Default to the
+      // highest DIMS-available female pose (flight > perched), mirroring
+      // the male probe flow's "highest available" rule.
+      var fAvail = femalePoseAvailability(base);
+      var fPick = fAvail[2] ? 2 : 1;
+      modalVariant.pose = fPick;
+      setPoseToggleState(fAvail, fPick);
+      img.src = sketchSrc(sci, fPick, 'f');
+      img.alt = sci;
+    } else {
+      // Reset the toggle: assume nothing's available, set pose 1 (perched
+      // cutout - every species has it) as the optimistic default. HEAD
+      // probes below toggle each button on/off and pick the best default.
+      poseToggle.removeAttribute('data-unavailable');
+      poseBtns.forEach(function (b) {
+        b.setAttribute('data-unavailable', 'true');
+        b.setAttribute('aria-current', 'false');
+      });
+      var p1 = poseToggle.querySelector('button[data-pose="1"]');
+      if (p1) {
+        p1.removeAttribute('data-unavailable');
+        p1.setAttribute('aria-current', 'true');
+      }
+      modalVariant.pose = 1;
+      img.src = sketchSrc(sci, 1, 'm');
+      img.alt = sci;
+      probeMalePoses(sci, 0);
+    }
     document.getElementById('modalSci').textContent = sci;
     renderModalEffin(sci);
     document.getElementById('modalGenus').textContent = (sci.split(' ')[0] || '-');
@@ -3103,6 +3217,42 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     }
   }
 
+  // Sex switch, shared by the sex-toggle click handler and the hash
+  // router (todo 9 calls this when a deep-link's sex changes under an
+  // already-open modal). Switching sex re-evaluates pose availability
+  // for the new sex and clamps: keep the current pose if the new sex
+  // has it, else drop to perched. Ends with a hash replaceState (never
+  // location.hash - no Back-button entry) so refresh/copy matches the
+  // visible sex.
+  function setModalSex(sex) {
+    sex = (sex === 'f') ? 'f' : 'm';
+    var sci = document.getElementById('modalSci').textContent;
+    var base = slugify(sci);
+    var hasFemale = femaleAvailable(base);
+    if (!hasFemale) sex = 'm';
+    if (sex === modalVariant.sex) return;
+    modalVariant.sex = sex;
+    setSexToggleState(sex, hasFemale);
+    if (sex === 'f') {
+      var fAvail = femalePoseAvailability(base);
+      var pick = fAvail[modalVariant.pose] ? modalVariant.pose : 1;
+      modalVariant.pose = pick;
+      setPoseToggleState(fAvail, pick);
+      swapModalImage(sketchSrc(sci, pick, 'f'));
+    } else {
+      // Back to male: swap optimistically to the current pose, then let
+      // the HEAD-probe flow settle availability (keeping the pose when
+      // the probe confirms it).
+      var pref = modalVariant.pose;
+      swapModalImage(sketchSrc(sci, pref, 'm'));
+      probeMalePoses(sci, pref);
+      syncPill(document.getElementById('modalPoseToggle'));
+    }
+    history.replaceState(null, '', serializeHash({
+      view: 'atlas', hours: currentHours, sci: sci, sex: sex,
+    }));
+  }
+
   // Pose toggle inside the modal - swaps the sketch between perched
   // (default) and in-flight alt pose. A short opacity transition makes
   // the swap feel intentional rather than a hard cut.
@@ -3110,21 +3260,23 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     var btn = ev.target.closest && ev.target.closest('button');
     if (!btn || btn.getAttribute('data-unavailable') === 'true') return;
     var pose = +btn.dataset.pose;
+    modalVariant.pose = pose;
     var toggle = document.getElementById('modalPoseToggle');
     [].slice.call(toggle.querySelectorAll('button')).forEach(function (b) {
       b.setAttribute('aria-current', b === btn ? 'true' : 'false');
     });
     syncPill(toggle);
-    var img = document.getElementById('modalImg');
     var sci = document.getElementById('modalSci').textContent;
-    img.classList.add('swapping');
-    setTimeout(function () {
-      img.src = sketchSrc(sci, pose);
-      img.addEventListener('load', function once() {
-        img.classList.remove('swapping');
-        img.removeEventListener('load', once);
-      });
-    }, 180);
+    swapModalImage(sketchSrc(sci, modalVariant.pose, modalVariant.sex));
+  });
+
+  // Sex toggle inside the modal - same machinery as the pose toggle.
+  // setModalSex does the state swap, fade, pill sync, and the hash
+  // replaceState, so manual switching keeps URL and visible sex in sync.
+  document.getElementById('modalSexToggle').addEventListener('click', function (ev) {
+    var btn = ev.target.closest && ev.target.closest('button');
+    if (!btn || btn.getAttribute('data-unavailable') === 'true') return;
+    setModalSex(btn.dataset.sex === 'f' ? 'f' : 'm');
   });
 
   // Expose for debugging during dev - also lets the modal be opened
@@ -3555,7 +3707,7 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
       // re-animation on picker clicks / Back-Forward to the same bird).
       var modalOpen = document.getElementById('detail-modal').getAttribute('aria-hidden') === 'false';
       if (!(modalOpen && document.getElementById('modalSci').textContent === parsed.sci)) {
-        openDetailModal(parsed.sci);
+        openDetailModal(parsed.sci, parsed.sex || 'm');
       }
     } else {
       // No sci: apply the parsed view (stay put when the hash names no
