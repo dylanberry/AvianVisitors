@@ -2,11 +2,14 @@
 
 The prompt sent to Gemini for every illustration.
 
-Three text placeholders get replaced per request:
+Six text placeholders get replaced per request:
 
 - `{sci_name}` is the binomial Latin name, e.g. `Calypte anna`
 - `{com_name}` is the English common name, e.g. `Anna's Hummingbird`
 - `{pose}` is either `perched` (pose 1) or `in flight with wings spread` (pose 2)
+- `{sex}` is either `male` or `female`
+- `{sex_note}` is the female plumage note (empty for male renders)
+- `{ref_directive}` is the per-mode IMAGE 1 directive (color-match for male, anatomy-only for female)
 
 `pregen.py` also attaches up to three reference images per request:
 
@@ -32,7 +35,7 @@ The ENTIRE bird must fit within the image frame: head, both wings (fully extende
 
 ### Reference handling
 
-- IMAGE 1 (positive, anatomy) IS {com_name}. Match its proportions, head color, throat, wing pattern, back color, tail pattern, leg color. If the reference shows non-breeding or worn plumage, render the brightest BREEDING (adult-summer) plumage instead - render the most diagnostic, recognizable version of the species.
+- IMAGE 1 (positive, anatomy) IS {com_name}. {ref_directive} Render the adult {sex} of the species in breeding plumage. {sex_note}The plumage must match the described {sex} exactly - do not default to the more colorful sex if the {sex} is duller.
 {anti_ref_line}
 - IMAGE 3 (positive, style) is a real Edo-period kachō-e woodblock print. The bird in IMAGE 3 is a DIFFERENT species - IGNORE its species, only borrow its painting style. Render the bird in IMAGE 3's painting style. DO NOT copy any compositional elements from IMAGE 3 (branches, leaves, water, moon, scenery).
 
