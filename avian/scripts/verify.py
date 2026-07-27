@@ -34,7 +34,7 @@ GEMINI_URL = (
     "gemini-2.5-flash:generateContent"
 )
 
-VERIFY_PROMPT = """You are a rigorous ornithologist examining a stylized kachō-e woodblock-style bird illustration. The bird in the image is intended to be a {target_com} ({target_sci}).
+VERIFY_PROMPT = """You are a rigorous ornithologist examining a stylized kachō-e woodblock-style bird illustration. The bird in the image is intended to be a {target_com} ({target_sci}).{sex_line}
 
 Analyze the image and respond ONLY with a valid JSON object (no other text, no markdown fences) with these fields:
 
@@ -55,6 +55,11 @@ Analyze the image and respond ONLY with a valid JSON object (no other text, no m
 }}
 
 Be honest. If the bird looks more like a different species, say so. If the anatomy has issues, say so. Empty strings for fields where there's nothing to report."""
+
+FEMALE_SEX_LINE = (
+    "\n\nThis is intended to be the adult FEMALE of the species - judge "
+    "plumage against the FEMALE's field marks, not the male's."
+)
 
 
 def slugify(sci: str) -> str:
@@ -119,25 +124,27 @@ def extract_json(resp: dict) -> dict | None:
     return None
 
 
-def verify_one(api_key: str, png: Path, sci: str, com: str) -> dict | None:
+def verify_one(api_key: str, png: Path, sci: str, com: str, sex: str = "m") -> dict | None:
     parts = [
-        {"text": VERIFY_PROMPT.format(target_sci=sci, target_com=com)},
+        {"text": VERIFY_PROMPT.format(
+            target_sci=sci, target_com=com,
+            sex_line=FEMALE_SEX_LINE if sex == "f" else "")},
         {"inlineData": {"mimeType": "image/png",
                         "data": base64.b64encode(png.read_bytes()).decode()}},
     ]
     return extract_json(call_gemini(api_key, parts))
 
 
-CSV_HEADER = ("slug,pose,target_sci,guessed_sci,guessed_com,matches,confidence,"
+CSV_HEADER = ("slug,pose,sex,target_sci,guessed_sci,guessed_com,matches,confidence,"
               "wings,legs,head,tail,has_stick,diag_present,diag_missing,"
               "anatomy_issues,style\n")
 
 
-def csv_row(slug: str, pose: int, sci: str, v: dict) -> str:
+def csv_row(slug: str, pose: int, sex: str, sci: str, v: dict) -> str:
     def q(key):
         return '"' + str(v.get(key, "")).replace('"', "'") + '"'
     return ",".join([
-        slug, str(pose), sci.replace(",", " "),
+        slug, str(pose), sex, sci.replace(",", " "),
         str(v.get("guessed_species_sci", "")).replace(",", " "),
         str(v.get("guessed_species_com", "")).replace(",", " "),
         str(v.get("matches_target", False)), str(v.get("guess_confidence", "")),
@@ -183,13 +190,23 @@ def main() -> int:
             print(f"  [skip] missing {png.name}")
             continue
         name = png.stem
-        pose, slug = (2, name[:-2]) if name.endswith("-2") else (1, name)
-        if slug not in labels:
-            print(f"  [skip] no label for {slug}")
+        # Order is load-bearing: "-f-2" must be checked before "-2"
+        # ("<slug>-f-2".endswith("-2") is true).
+        if name.endswith("-f-2"):
+            pose, sex, base = 2, "f", name[:-4]
+        elif name.endswith("-f"):
+            pose, sex, base = 1, "f", name[:-2]
+        elif name.endswith("-2"):
+            pose, sex, base = 2, "m", name[:-2]
+        else:
+            pose, sex, base = 1, "m", name
+        slug = base if sex == "m" else name
+        if base not in labels:
+            print(f"  [skip] no label for {base}")
             continue
-        sci, com = labels[slug]
+        sci, com = labels[base]
         try:
-            v = verify_one(api_key, png, sci, com)
+            v = verify_one(api_key, png, sci, com, sex)
         except Exception as e:
             print(f"  [fail] {png.name}: {e}", file=sys.stderr)
             continue
@@ -212,7 +229,7 @@ def main() -> int:
         if flags:
             print(f"         [warn] {'; '.join(flags)}")
         with args.out.open("a") as f:
-            f.write(csv_row(slug, pose, sci, v))
+            f.write(csv_row(slug, pose, sex, sci, v))
 
     print(f"\ndone. {mismatches} mismatch(es). results -> {args.out}")
     return 0
