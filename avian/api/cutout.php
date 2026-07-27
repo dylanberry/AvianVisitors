@@ -7,6 +7,14 @@
 //   3. cached rembg of a Wikipedia photo at $HOME/BirdSongs/Extracted/cutouts/
 //   4. fresh Wikipedia -> rembg -> cache (skipped gracefully if rembg unset)
 //
+// Params: sci (required binomial), pose (1=perched default, 2=flight),
+// sex (m default; only literal 'f' selects female - anything else is male).
+// For sex=f the bundled step first tries the female variant(s)
+// (<slug>-f[-<pose>].png, falling back to female perched for pose>1),
+// then falls through to the EXACT male chain below, so a missing female
+// file serves the male render with HTTP 200. Female availability is
+// known client-side from the DIMS table - never probe this endpoint.
+//
 // The frontend's <img src> points here for every species - bundled
 // hits return instantly; cold misses fall through to the dynamic path.
 //
@@ -40,12 +48,37 @@ $pose = (int)($_GET['pose'] ?? 1);
 if ($pose < 1 || $pose > 99) $pose = 1;
 $poseSuffix = $pose === 1 ? '' : "-$pose";
 
+// sex=f selects the female variant. Whitelist: ONLY the literal 'f' -
+// any other value (absent, 'm', junk, traversal attempts) is male and
+// takes the exact pre-existing code path. The validated $sex is never
+// concatenated into a filename; the female filenames are built from
+// fixed '-f' segments below.
+$sex = (($_GET['sex'] ?? 'm') === 'f') ? 'f' : 'm';
+
 function serve_png(string $path): void {
     header('Content-Type: image/png');
     header('Cache-Control: public, max-age=86400');
     header('Content-Length: ' . (string)filesize($path));
     readfile($path);
     exit;
+}
+
+// 1a. sex=f: try the female bundled variant(s) first. Misses fall
+//     through to the EXACT male chain below, so a species without a
+//     female render serves its male file with HTTP 200.
+if ($sex === 'f') {
+    $illustrationsDir = dirname(__DIR__) . '/assets/illustrations';
+    $female = "$illustrationsDir/{$slug}-f{$poseSuffix}.png";
+    if (is_file($female) && filesize($female) > 1024) {
+        serve_png($female);
+    }
+    // Female pose-2 missing? Fall back to female perched before male.
+    if ($pose !== 1) {
+        $femalePerched = "$illustrationsDir/{$slug}-f.png";
+        if (is_file($femalePerched) && filesize($femalePerched) > 1024) {
+            serve_png($femalePerched);
+        }
+    }
 }
 
 // 1. Bundled illustration with pose suffix (the kachō-e PNG the repo
