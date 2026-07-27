@@ -16,7 +16,18 @@ the model can't cut transparency cleanly, but a flat known ground removes
 cleanly in step 2. Each species gets two poses: <slug>.png (perched) and
 <slug>-2.png (flight). Edit avian/scripts/prompt.template.md to change the
 visual style - the prompt body is re-sent verbatim per request with
-{sci_name}, {com_name}, and {pose} substituted.
+{sci_name}, {com_name}, {pose}, {sex}, {sex_note}, and {ref_directive}
+substituted.
+
+Sex variants:
+    --sex female renders the adult FEMALE for species listed in
+    species-dimorphism.json (species absent from the manifest are
+    monomorphic and skipped) and writes <slug>-f.png / <slug>-f-2.png.
+    Female prompts inject the manifest's plumage note as {sex_note},
+    re-caption the male reference photo as anatomy-only, and never
+    inject species-notes.json (those notes are male-coded). A
+    hand-placed references/<slug>-f.jpg|.png is used as the female
+    reference when present.
 
 Reference photos:
     Cached in avian/assets/references/. The auto-fetch hits the
@@ -72,6 +83,38 @@ GEMINI_URL = (
     "gemini-2.5-flash-image:generateContent"
 )
 POSES = {1: "perched", 2: "in flight with wings spread"}
+
+# {ref_directive} substitution per --sex mode. Male keeps the historical
+# color-match text verbatim; female re-purposes IMAGE 1 as anatomy-only
+# and explicitly preempts the frozen generic IMAGE 1 color/markings lines
+# later in the template (the plumage source of truth is the manifest's
+# {sex_note} instead).
+REF_DIRECTIVE_MALE = (
+    "Match its proportions, head color, throat, wing pattern, back color, "
+    "tail pattern, leg color."
+)
+REF_DIRECTIVE_FEMALE = (
+    "Match ONLY its proportions, posture, and anatomy. All plumage color "
+    "and markings come from the female description in this prompt, NEVER "
+    "from IMAGE 1 - IMAGE 1 may show the male. For this render, IMAGE 1 "
+    "supplies anatomy ONLY: ignore every later generic mention of IMAGE 1 "
+    "color or markings (including the 'Treat IMAGE 1 for anatomy and "
+    "color information' and 'color, markings ... match IMAGE 1' "
+    "instructions below) - plumage comes solely from the female "
+    "description above."
+)
+
+# IMAGE 1 captions per mode. Male is the historical default; female gets
+# either an adult-FEMALE caption (hand-placed <slug>-f reference) or an
+# anatomy-only caption wrapped around the species' normal (male) photo.
+REF_CAPTION_MALE = "IMAGE 1 (positive, target species):"
+REF_CAPTION_FEMALE = "IMAGE 1 (positive, target species - adult FEMALE):"
+REF_CAPTION_FEMALE_ANATOMY = (
+    "IMAGE 1 (positive, ANATOMY ONLY - this is the MALE of the species. "
+    "Copy ONLY body shape, proportions, and posture. Do NOT copy its "
+    "plumage colors or markings - you are drawing the FEMALE described "
+    "in the prompt.)"
+)
 
 # Genera where Gemini's prior collapses to Blue Jay markings unless we
 # attach a Blue Jay anti-reference. Add to this set if you find another
@@ -376,6 +419,29 @@ def load_species_notes(notes_path: Path) -> dict[str, str]:
             if not k.startswith("_") and isinstance(v, str)}
 
 
+def load_dimorphism(dimo_path: Path) -> dict[str, str]:
+    """Load the female-plumage manifest for --sex female. Keys are
+    scientific names; values are adult-FEMALE plumage notes injected as
+    {sex_note}. Species absent from the manifest are monomorphic and get
+    no female render. Unlike load_species_notes this file is REQUIRED in
+    female mode - a missing or malformed manifest is a hard error, not a
+    silent {}, so a bad path can never quietly skip the whole batch."""
+    if not dimo_path.exists():
+        raise ValueError(f"dimorphism manifest not found: {dimo_path}")
+    try:
+        raw = json.loads(dimo_path.read_text())
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"dimorphism manifest is not valid JSON: {dimo_path}: {e}"
+        ) from e
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"dimorphism manifest must be a JSON object: {dimo_path}"
+        )
+    return {k: v for k, v in raw.items()
+            if not k.startswith("_") and isinstance(v, str)}
+
+
 def load_anti_ref(refs_dir: Path, key: str = "bluejay") -> Path | None:
     """Return path to the bundled anti-reference for the given key,
     if present. Known keys: bluejay, barnswallow."""
@@ -412,6 +478,9 @@ def gen_one(
     anti_ref_key: str | None = None,
     species_note: str | None = None,
     style_ref: Path | None = None,
+    sex: str = "male",
+    sex_note: str = "",
+    ref_caption: str = REF_CAPTION_MALE,
 ) -> bytes:
     """Single Gemini call with bounded retry on 429 + transient 5xx.
     Returns raw PNG bytes.
@@ -425,13 +494,29 @@ def gen_one(
               caption the image as an unnamed "another species".
     species_note: optional 1-2 sentence clarifier for difficult species,
                   appended as the last paragraph before the reference
-                  block.
+                  block. Male-coded: never pass one for female renders.
+    sex: "male" (default) or "female" - feeds the {sex} placeholder and
+         selects the {ref_directive} text.
+    sex_note: female-plumage manifest note, substituted into {sex_note}
+              with one trailing space so it reads as its own sentence
+              before "The plumage must match ...". Empty for male.
+    ref_caption: the IMAGE 1 caption (one of REF_CAPTION_*): the
+                 historical male default, adult-FEMALE for a hand-placed
+                 female reference, or the anatomy-only wrapper when the
+                 only reference photo available is the male.
     """
     body = (prompt
             .replace("{sci_name}", sci)
             .replace("{com_name}", com)
             .replace("{pose}", POSES[pose])
-            .replace("{anti_ref_line}", _anti_ref_line(anti_ref_key)))
+            .replace("{anti_ref_line}", _anti_ref_line(anti_ref_key))
+            # {sex_note} before {sex}: "{sex}" is a prefix of "{sex_note}"
+            # so replacing it first would corrupt the longer token.
+            .replace("{sex_note}", sex_note + " " if sex_note else "")
+            .replace("{sex}", sex)
+            .replace("{ref_directive}",
+                     REF_DIRECTIVE_FEMALE if sex == "female"
+                     else REF_DIRECTIVE_MALE))
     if species_note:
         body = body + "\n\nSpecies-specific note: " + species_note
 
@@ -457,7 +542,7 @@ def gen_one(
         except Exception:
             ref_bytes = positive_ref.read_bytes()
             ref_mime = _mime_for(positive_ref)
-        parts.append({"text": "IMAGE 1 (positive, target species):"})
+        parts.append({"text": ref_caption})
         parts.append({"inline_data": {
             "mime_type": ref_mime,
             "data": base64.b64encode(ref_bytes).decode(),
@@ -572,6 +657,15 @@ def main() -> int:
     ap.add_argument("--notes", type=Path,
                     default=Path(__file__).resolve().parent / "species-notes.json",
                     help="Per-species prompt addenda for difficult cases (e.g. similar-species drift)")
+    ap.add_argument("--sex", choices=["male", "female"], default="male",
+                    help="Which sex to render (default: male). female mode "
+                         "requires the dimorphism manifest, skips species "
+                         "absent from it, and writes <slug>-f.png / "
+                         "<slug>-f-2.png")
+    ap.add_argument("--dimorphism", type=Path,
+                    default=Path(__file__).resolve().parent / "species-dimorphism.json",
+                    help="Female-plumage manifest for --sex female "
+                         "(default: species-dimorphism.json beside this script)")
     ap.add_argument("--poses", nargs="+", type=int, default=[1, 2],
                     choices=list(POSES.keys()),
                     help="Which poses to render. 1=perched, 2=flight. Default: both.")
@@ -623,6 +717,14 @@ def main() -> int:
     notes = load_species_notes(args.notes)
     if notes:
         print(f"[notes] loaded per-species addenda for {len(notes)} species")
+    dimorphism: dict[str, str] = {}
+    if args.sex == "female":
+        try:
+            dimorphism = load_dimorphism(args.dimorphism)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(f"[dimorphism] loaded female-plumage notes for {len(dimorphism)} species")
 
     total = len(species) * len(args.poses)
     print(f"generating up to {total} illustrations into {args.out}/")
@@ -633,9 +735,29 @@ def main() -> int:
     first_fail = None
     for idx, (sci, com) in enumerate(species):
         slug = slugify(sci)
+        if args.sex == "female" and sci not in dimorphism:
+            print(f"  [skip] {sci}: not in dimorphism manifest")
+            continue
+        # species-notes.json is male-coded; female prompts carry the
+        # manifest's plumage note as sex_note instead.
+        species_note = notes.get(sci) if args.sex == "male" else None
+        sex_note = dimorphism.get(sci, "") if args.sex == "female" else ""
         pos_ref = None
+        ref_caption = REF_CAPTION_MALE
         if not args.no_refs:
-            pos_ref = ensure_reference(args.refs, slug, sci, com)
+            if args.sex == "female":
+                for ext in REF_EXTS:
+                    cand = args.refs / f"{slug}-f{ext}"
+                    if cand.exists() and cand.stat().st_size > 1024:
+                        pos_ref = cand
+                        ref_caption = REF_CAPTION_FEMALE
+                        break
+                if pos_ref is None:
+                    pos_ref = ensure_reference(args.refs, slug, sci, com)
+                    if pos_ref:
+                        ref_caption = REF_CAPTION_FEMALE_ANATOMY
+            else:
+                pos_ref = ensure_reference(args.refs, slug, sci, com)
             if not pos_ref:
                 print(f"  [warn] no Wikipedia photo for {sci} - proceeding without positive ref", file=sys.stderr)
         anti_key = select_anti_ref_key(sci)
@@ -646,7 +768,10 @@ def main() -> int:
         anti_key_for_call = anti_key if anti else None
 
         for pose in args.poses:
-            fname = f"{slug}.png" if pose == 1 else f"{slug}-{pose}.png"
+            if args.sex == "female":
+                fname = f"{slug}-f.png" if pose == 1 else f"{slug}-f-{pose}.png"
+            else:
+                fname = f"{slug}.png" if pose == 1 else f"{slug}-{pose}.png"
             path = args.out / fname
             if path.exists() and not args.force:
                 skipped_existing += 1
@@ -658,14 +783,18 @@ def main() -> int:
                 data = gen_one(gemini_key, prompt, sci, com, pose,
                                positive_ref=pos_ref, anti_ref=anti,
                                anti_ref_key=anti_key_for_call,
-                               species_note=notes.get(sci),
-                               style_ref=style_ref_path)
+                               species_note=species_note,
+                               style_ref=style_ref_path,
+                               sex=args.sex,
+                               sex_note=sex_note,
+                               ref_caption=ref_caption)
                 path.write_bytes(data)
                 done += 1
                 refs_tag = "+ref" if pos_ref else ""
                 anti_tag = "+anti" if anti else ""
-                note_tag = "+note" if notes.get(sci) else ""
-                print(f"  [ok]   {fname} ({len(data)//1024} KB){refs_tag}{anti_tag}{note_tag}")
+                note_tag = "+note" if species_note else ""
+                sex_tag = "+femnote" if sex_note else ""
+                print(f"  [ok]   {fname} ({len(data)//1024} KB){refs_tag}{anti_tag}{note_tag}{sex_tag}")
             except (urllib.error.HTTPError, urllib.error.URLError, RuntimeError) as e:
                 failed += 1
                 first_fail = first_fail or fname
