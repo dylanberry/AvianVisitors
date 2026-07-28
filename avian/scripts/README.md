@@ -88,3 +88,59 @@ python3 verify.py --labels labels.txt calypte-anna
   different style print; a one-off `--species` regen.
 - **Matched pair.** The perched and flight poses must read as the same
   individual. Review them side by side before locking.
+
+## Hard-won lessons
+
+These are patterns we hit repeatedly during the Toronto build. They are
+not obvious from the code alone.
+
+### Style reference reinforcement loops
+
+If the style reference (IMAGE 3) depicts the **same species** you are
+generating, Gemini borrows the reference's head pattern and markings
+instead of following the prompt. The Koson sparrow print (`01-sparrows-on-bamboo-Koson.jpg`)
+depicts *Passer montanus* (Eurasian Tree Sparrow) — a species with a
+chestnut crown, white cheeks, and a black cheek spot. When we used this
+print as the style ref for *Passer domesticus* (House Sparrow), Gemini
+painted the Tree Sparrow head pattern despite explicit instructions not
+to. The fix was switching to a completely unrelated style ref
+(`03-jays-on-berry-tree-Koson.jpg` for perched, `04-kingfisher-Koson.jpg`
+for flight).
+
+**Rule**: If a species keeps collapsing to a look-alike despite strong
+prompt notes and anti-references, check whether the style reference
+itself depicts the wrong species. Swap it for an unrelated print.
+
+### Anti-reference specificity
+
+The anti-reference system (IMAGE 2) attaches a photo of the wrong species
+with a `do_not_copy` caption. It works — but only if the `do_not_copy`
+list names the **exact diagnostic features** to avoid, and the caption
+explicitly names the wrong species. Generic instructions like "do not copy
+this bird" are ignored; "do NOT paint its chestnut crown, black cheek
+spot, or black bib — these are Passer montanus markings" are followed.
+
+### Reference photos are necessary but not sufficient
+
+A correct reference photo (IMAGE 1) anchors anatomy and proportions, but
+it does not override the style prior on its own. For hard species, you
+need **all three** layers: reference photo + anti-reference + non-conflicting
+style ref. Removing any one layer lets the prior creep back in.
+
+### Flight poses resist correction harder than perched poses
+
+When Gemini collapses a species, the flight pose is typically harder to
+fix than the perched pose. We suspect this is because the flight pose
+has more visual complexity (wings spread, feet tucked) so Gemini leans
+more heavily on its priors. For hard species, expect to generate 3-5
+flight attempts even after the perched pose is clean.
+
+### Dimorphism notes must be exhaustive
+
+For sexually dimorphic species, the female plumage note in
+`species-dimorphism.json` should list every male-only feature to avoid,
+not just the female features to include. "Plain buff head" is weaker
+than "plain buff head, NO chestnut crown, NO black cheek spot, NO black
+bib — Eurasian Tree Sparrow head markings are WRONG." Negative
+constraints (what NOT to paint) are more effective than positive
+descriptions alone.
