@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Deploy the latest Bird Up! front-end + Caddy changes from this repo to
-# the live Pi. Run from the repo root.
+# Deploy the latest Bird Up! front-end + illustrations + Caddy changes from
+# this repo to the live Pi. Run from the repo root.
+#
+# Preflight (before any copying): aborts if the Pi has < 2G free on /, and
+# aborts with an apt-get hint if rsync is not installed on the Pi.
+# Illustrations are synced with `rsync -avz --size-only` (no --delete, so
+# stale files on the Pi are never removed; --size-only avoids re-transferring
+# the whole tree when checkout mtimes differ from the Pi's copies).
 #
 # This script needs a one-time, temporary passwordless sudoers entry on the
 # Pi because the agent workstation cannot prompt for the Pi sudo password.
@@ -33,6 +39,33 @@ Then run this script again. The sudoers file is removed automatically at the end
 EOF
     exit 1
 fi
+
+echo "Checking free space on Pi..."
+free_space=$(ssh -o BatchMode=yes "${PI_USER}@${PI_HOST}" "df --output=avail -BG / | tail -1" | tr -d '[:space:]')
+echo "  / has ${free_space} available"
+if [ "${free_space%G}" -lt 2 ]; then
+    echo "Error: less than 2G free on the Pi (/ has ${free_space}); aborting before any copying." >&2
+    exit 1
+fi
+
+echo "Checking rsync on Pi..."
+if ! ssh -o BatchMode=yes "${PI_USER}@${PI_HOST}" "command -v rsync" >/dev/null; then
+    cat <<EOF >&2
+
+Error: rsync is not installed on the Pi (${PI_HOST}).
+Install it by running this on the Pi:
+
+    sudo apt-get install -y rsync
+
+Then run this script again.
+
+EOF
+    exit 1
+fi
+
+echo "Syncing illustrations..."
+rsync -avz --size-only -e "ssh -o BatchMode=yes" avian/assets/illustrations/ \
+    "${PI_USER}@${PI_HOST}:${PI_AVIAN_DIR}/assets/illustrations/"
 
 echo "Copying front-end files..."
 scp -o BatchMode=yes avian/frontend/index.html avian/frontend/apt.js avian/frontend/styles.css avian/frontend/ebird-codes.js avian/frontend/personality.json \
