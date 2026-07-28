@@ -230,6 +230,12 @@ def select_style_ref(sci: str, pose: int) -> str:
     # Custom overrides for hard species
     if sci == "Aeronautes saxatalis":
         return STYLE_REFS["vibrant_perched"]  # Koson kingfisher (vertical aerial-feeder posture, no swallow bias)
+    if sci == "Passer domesticus":
+        # Breaks sparrow-style reinforcement loop: Koson's sparrow print
+        # depicts Passer montanus, so we use a completely different style.
+        if pose == 2:
+            return STYLE_REFS["vibrant_perched"]  # Koson kingfisher (no sparrow/flight bias)
+        return STYLE_REFS["vivid_perched"]  # Koson jays-on-berry-tree (no sparrow bias)
     if pose == 2:
         return STYLE_REFS["large_flight" if genus in LARGE_FLIGHT_GENERA else "small_flight"]
     return STYLE_REFS[GENUS_STYLE_PERCHED.get(genus, "small_songbird_perched")]
@@ -252,6 +258,16 @@ ANTI_REFS = {
             "streamers, or its blue-black back"
         ),
     },
+    "passermontanus": {
+        "common_name": "Eurasian Tree Sparrow",
+        "sci_name": "Passer montanus",
+        "do_not_copy": (
+            "its chestnut/rufous crown, its white cheeks with a distinct "
+            "black cheek spot, its black bib/throat patch, or its white "
+            "undertail - these are Passer montanus markings, NOT Passer "
+            "domesticus female markings"
+        ),
+    },
 }
 
 # Which anti-ref to attach for which genus, and the species to exclude
@@ -262,6 +278,7 @@ ANTI_REF_TRIGGERS = (
     (JAY_GENERA, "bluejay", "Cyanocitta cristata"),
     (SWALLOW_GENERA, "barnswallow", "Hirundo rustica"),
     (SWIFT_GENERA, "barnswallow", None),
+    ({"Passer"}, "passermontanus", "Passer montanus"),
 )
 
 USER_AGENT = "BirdUp/1.0 (https://github.com/dylanberry/BirdUp)"
