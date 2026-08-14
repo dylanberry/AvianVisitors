@@ -32,7 +32,7 @@ Run the following on the Pi to grant passwordless sudo for this deploy only:
 
 ssh ${PI_USER}@${PI_HOST}
 
-echo '${PI_USER} ALL=(root) NOPASSWD: /usr/bin/cp /tmp/Caddyfile /etc/caddy/Caddyfile, /usr/bin/systemctl reload caddy, /usr/bin/rm -f ${SUDOERS_FILE}' | sudo tee ${SUDOERS_FILE} && sudo chmod 440 ${SUDOERS_FILE} && sudo visudo -c
+echo '${PI_USER} ALL=(root) NOPASSWD: /usr/bin/cp /tmp/Caddyfile /etc/caddy/Caddyfile, /usr/bin/systemctl reload caddy, /usr/bin/chown -R caddy:caddy ${PI_AVIAN_DIR}/ota, /usr/bin/rm -f ${SUDOERS_FILE}' | sudo tee ${SUDOERS_FILE} && sudo chmod 440 ${SUDOERS_FILE} && sudo visudo -c
 
 Then run this script again. The sudoers file is removed automatically at the end.
 
@@ -76,8 +76,23 @@ ssh -o BatchMode=yes "${PI_USER}@${PI_HOST}" \
     'for f in index.html apt.js styles.css ebird-codes.js personality.json; do target="/home/dylanberry/BirdSongs/Extracted/$f"; src="/home/dylanberry/BirdNET-Pi/avian/frontend/$f"; [ -L "$target" ] || ln -s "$src" "$target"; done'
 
 echo "Copying API files..."
-scp -o BatchMode=yes avian/api/*.php \
+scp -o BatchMode=yes avian/api/*.php avian/api/.user.ini \
     "${PI_USER}@${PI_HOST}:${PI_AVIAN_DIR}/api/"
+
+echo "Creating OTA server directory (caddy-writable for php-fpm)..."
+ssh -o BatchMode=yes "${PI_USER}@${PI_HOST}" "mkdir -p ${PI_AVIAN_DIR}/ota"
+if ssh -o BatchMode=yes "${PI_USER}@${PI_HOST}" "sudo -n /usr/bin/chown -R caddy:caddy ${PI_AVIAN_DIR}/ota"; then
+    echo "  ${PI_AVIAN_DIR}/ota -> caddy:caddy"
+else
+    cat <<EOF >&2
+Warning: could not chown ${PI_AVIAN_DIR}/ota to caddy:caddy.
+The OTA server API cannot write firmware until this is fixed. Add the
+chown command to the temporary sudoers entry and re-run, or run on the Pi:
+
+    sudo chown -R caddy:caddy ${PI_AVIAN_DIR}/ota
+
+EOF
+fi
 
 echo "Copying Caddy auth snippet..."
 scp -o BatchMode=yes avian/forwarding/caddy-auth.caddy \
@@ -110,6 +125,7 @@ admin_urls=(
     "http://${PI_HOST}/avian/api/config.php"
     "http://${PI_HOST}/avian/api/birdnet-status.php"
     "http://${PI_HOST}/avian/api/correction.php"
+    "http://${PI_HOST}/avian/api/ota-server.php"
 )
 for url in "${admin_urls[@]}"; do
     code=$(curl -s -o /dev/null -w "%{http_code}" "$url")

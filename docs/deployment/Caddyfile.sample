@@ -15,6 +15,14 @@ http:// {
 	handle /Charts/* {
 		file_server browse
 	}
+	# OTA server for the T-SIM7080G wireless mic node. Public static files
+	# (firmware .bin + ota-version.txt + .md5) served from
+	# ~/BirdNET-Pi/avian/ota/ - the node's firmware updater fetches these
+	# unauthenticated over the LAN. Written by the admin UI via
+	# /avian/api/ota-server.php (session-protected).
+	handle /avian/ota/* {
+		file_server
+	}
 	reverse_proxy /stream localhost:8000
 	php_fastcgi unix//run/php/php8.4-fpm.sock {
 		env HTTP_AUTHORIZATION {http.request.header.Authorization}

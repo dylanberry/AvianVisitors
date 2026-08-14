@@ -72,13 +72,35 @@ workstation agent cannot prompt for the Pi sudo password. If the entry is
 missing, the script prints the command to create it. On the Pi:
 
 ```bash
-echo 'dylanberry ALL=(root) NOPASSWD: /usr/bin/cp /tmp/Caddyfile /etc/caddy/Caddyfile, /usr/bin/systemctl reload caddy, /usr/bin/rm -f /etc/sudoers.d/avian-deploy' \
+echo 'dylanberry ALL=(root) NOPASSWD: /usr/bin/cp /tmp/Caddyfile /etc/caddy/Caddyfile, /usr/bin/systemctl reload caddy, /usr/bin/chown -R caddy:caddy /home/dylanberry/BirdNET-Pi/avian/ota, /usr/bin/rm -f /etc/sudoers.d/avian-deploy' \
   | sudo tee /etc/sudoers.d/avian-deploy \
   && sudo chmod 440 /etc/sudoers.d/avian-deploy \
   && sudo visudo -c
 ```
 
-The script removes `/etc/sudoers.d/avian-deploy` after the Caddy reload.
+The `chown` command makes `~/BirdNET-Pi/avian/ota/` writable by the php-fpm
+(`caddy`) user so the OTA admin endpoint can store firmware builds. The script
+removes `/etc/sudoers.d/avian-deploy` after the Caddy reload.
+
+## Node firmware OTA server
+
+The Pi hosts the T-SIM7080G node's firmware OTA server; the node fetches from
+`http://192.168.86.50/avian/ota/` (compile-time in the node firmware, see
+`../tsim7080g-node/`). Admin surface: Bird Up! drawer → **OTA**
+(`avian/api/ota-server.php`). Requirements on the Pi:
+
+- `~/BirdNET-Pi/avian/ota/` exists and is owned by `caddy:caddy` (deploy script does this).
+- `avian/api/.user.ini` in place — raises `upload_max_filesize` to 8M for the
+  firmware upload (php-fpm honors `.user.ini`; the Debian default 2M is too tight
+  as the app image grows).
+- Caddy serves `/avian/ota/*` statically (no auth — the node fetches it
+  unauthenticated over the LAN). Handled by the `handle /avian/ota/*` block in
+  `docs/deployment/Caddyfile`.
+
+To publish a build: `pio run` in the node repo, upload
+`.pio/build/esp32-s3-devkitc-1/firmware.bin` (app-only image) with a version in
+X.Y form from the OTA admin page. The node's own `/ota` page then offers
+"Download and install vX".
 
 When editing `apt.js`, bump the cache-busting query string in `index.html`
 (`apt.js?v=r...`) so browsers load the new version. The live Caddyfile in

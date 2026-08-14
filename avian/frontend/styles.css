@@ -1462,6 +1462,31 @@
     margin-top: 8px;
   }
   .admin-action.deploy button.copy:hover { color: var(--ink); }
+  /* OTA server section - reuses .menu-row / .seg / .switch / .save-state
+     from the settings panel plus a few section-specific bits. */
+  .admin-ota .menu-row input[type="text"] {
+    font: 12px ui-monospace, Menlo, monospace;
+    padding: 5px 8px;
+    border: 1px solid var(--rule, #c8bfae);
+    border-radius: 4px;
+    background: var(--paper); color: var(--ink);
+    text-align: right; min-width: 180px;
+  }
+  .admin-ota .menu-row input[type="text"]::placeholder { color: var(--ink-soft); }
+  label.ota-file {
+    display: block;
+    border: 1px dashed var(--rule, #c8bfae);
+    border-radius: 6px;
+    padding: 12px 14px; margin: 4px 0 2px;
+    font: 11px ui-monospace, Menlo, monospace;
+    color: var(--ink-soft); cursor: pointer;
+  }
+  label.ota-file:hover { color: var(--ink); border-color: var(--ink-soft); }
+  label.ota-file input[type="file"] { display: none; }
+  .admin-action.ota-upload code {
+    font: 10.5px ui-monospace, Menlo, monospace;
+    background: var(--paper-2); padding: 1px 4px; border-radius: 3px;
+  }
   .admin-unreachable {
     background: var(--paper); border-radius: 8px;
     padding: 14px 16px; color: var(--accent);

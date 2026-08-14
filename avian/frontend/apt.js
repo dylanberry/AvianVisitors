@@ -3316,6 +3316,7 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
   var ADMIN_TITLES = {
     settings: 'Settings',
     system: 'System',
+    ota: 'OTA',
     logs: 'Logs',
     tools: 'Tools',
   };
@@ -3352,6 +3353,7 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
     adminSect = section;
     if (section === 'settings') renderAdminSettings();
     else if (section === 'system') renderAdminSystem();
+    else if (section === 'ota') renderAdminOta();
     else if (section === 'logs') renderAdminLogs();
     else if (section === 'tools') renderAdminTools();
   }
@@ -3656,6 +3658,146 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
           setTimeout(function () { b.textContent = old; }, 1400);
         });
       });
+    });
+  }
+
+  // ===== OTA server (wireless mic node firmware updates) =====
+  // Backed by avian/api/ota-server.php: publishes the node firmware build
+  // + version that the node's /ota page polls and downloads. Refreshes on
+  // entry and after each action (no background poll - uploads must not be
+  // clobbered by a stale render).
+  function renderAdminOta() {
+    adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">loading ota server...</p>';
+    adminApi('./avian/api/ota-server.php')
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok || !res.j || !res.j.ok) throw new Error((res.j && res.j.error) || 'HTTP ' + res.status);
+        adminBody.innerHTML = otaMarkup(res.j);
+        wireOta();
+      })
+      .catch(function (e) { adminBody.innerHTML = adminUnreachableHtml('ota server failed (' + e.message + ')'); });
+  }
+  function otaMarkup(j) {
+    var art = j.artifact, node = j.node || {}, cfg = j.config || {};
+    var html = '<div class="admin-grid">';
+    html += adminCard('server version', j.version || 'none',
+      j.update_available ? 'newer than node firmware' : (j.version ? 'published for the node' : 'upload a build to publish'),
+      j.update_available ? 'alert' : '');
+    html += adminCard('node firmware', node.reachable ? (node.fw_version || '?') : 'unreachable',
+      node.reachable ? (node.ip + (node.ota_auto_supported ? '' : ' · auto-OTA off in firmware')) : 'status probe failed',
+      node.reachable && node.ota_auto_supported ? '' : 'warn');
+    html += adminCard('update', j.update_available ? 'available' : 'up to date',
+      j.update_available ? 'open the node /ota page to install' : (j.version ? 'node is current or ahead' : 'no version published'),
+      j.update_available ? 'alert' : '');
+    html += adminCard('artifact', art ? adminFmtBytes(art.size) : 'none',
+      art ? (art.name + ' · ' + (art.md5 || '').slice(0, 10) + '…') : 'no firmware on the server yet');
+    html += adminCard('served at', j.node_poll_url || '-',
+      'node fetches ota-version.txt + this file over HTTP');
+    html += '</div>';
+
+    html += '<div class="admin-ota">';
+    html += '<h2 class="admin-section-head">automatic updates</h2>';
+    html += '<div class="admin-settings">'
+      + settingsToggle('otaEnabled', 'Serve automatic updates', 'when off, the node reports "up to date" (version file mirrors node firmware)', !!cfg.enabled)
+      + '<div class="menu-row">'
+      + '  <div><span class="label">Version</span><span class="hint">published as ota-version.txt · must be newer than node firmware</span></div>'
+      + '  <input id="otaVersion" type="text" inputmode="decimal" value="' + adminEsc(cfg.version || '') + '" placeholder="1.23">'
+      + '</div>'
+      + '<div class="menu-row">'
+      + '  <div><span class="label">Node address</span><span class="hint">http status endpoint probed for the cards above</span></div>'
+      + '  <input id="otaNodeUrl" type="text" value="' + adminEsc(cfg.node_url || '') + '">'
+      + '</div>'
+      + '<div class="menu-save-row">'
+      + '  <span class="save-state" id="otaSaveState"></span>'
+      + '  <button type="button" id="otaSaveBtn" disabled>save</button>'
+      + '</div>'
+      + '</div>';
+
+    html += '<h2 class="admin-section-head">publish firmware</h2>';
+    html += '<div class="admin-action ota-upload">'
+      + '<h4>Upload a build</h4>'
+      + '<p>App-only image from <code>.pio/build/esp32-s3-devkitc-1/firmware.bin</code> (pio run). The node\'s /ota page will offer it once its own version is older.</p>'
+      + '<label class="ota-file"><input id="otaFile" type="file" accept=".bin,application/octet-stream"><span id="otaFileName">choose .bin file</span></label>'
+      + '<div class="menu-save-row">'
+      + '  <span class="save-state" id="otaUploadState"></span>'
+      + '  <button type="button" id="otaUploadBtn" disabled>upload + publish</button>'
+      + '</div>'
+      + '</div>';
+    html += '</div>';
+    return html;
+  }
+  function wireOta() {
+    var sw = adminBody.querySelector('.switch[data-key="otaEnabled"]');
+    var versionEl = document.getElementById('otaVersion');
+    var nodeUrlEl = document.getElementById('otaNodeUrl');
+    var saveBtn = document.getElementById('otaSaveBtn');
+    var saveState = document.getElementById('otaSaveState');
+    var file = document.getElementById('otaFile');
+    var fileName = document.getElementById('otaFileName');
+    var uploadBtn = document.getElementById('otaUploadBtn');
+    var uploadState = document.getElementById('otaUploadState');
+    function setState(el, txt, cls) {
+      if (!el) return;
+      el.textContent = txt;
+      el.className = 'save-state' + (cls ? ' ' + cls : '');
+    }
+    function markDirty() {
+      if (saveBtn) saveBtn.disabled = false;
+      setState(saveState, 'change pending');
+    }
+    if (sw) sw.addEventListener('click', function () {
+      var on = sw.getAttribute('aria-checked') !== 'true';
+      sw.setAttribute('aria-checked', on ? 'true' : 'false');
+      markDirty();
+    });
+    if (versionEl) versionEl.addEventListener('input', markDirty);
+    if (nodeUrlEl) nodeUrlEl.addEventListener('input', markDirty);
+    if (saveBtn) saveBtn.addEventListener('click', function () {
+      setState(saveState, 'saving...');
+      saveBtn.disabled = true;
+      fetch('./avian/api/ota-server.php', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'save',
+          enabled: sw ? sw.getAttribute('aria-checked') === 'true' : true,
+          version: ((versionEl && versionEl.value) || '').trim(),
+          node_url: ((nodeUrlEl && nodeUrlEl.value) || '').trim(),
+        }),
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (res.ok && res.j && res.j.ok) { renderAdminOta(); }
+          else setState(saveState, (res.j && res.j.error) || 'save failed', 'err');
+        })
+        .catch(function () { setState(saveState, 'network error', 'err'); if (saveBtn) saveBtn.disabled = false; });
+    });
+    if (file && fileName) file.addEventListener('change', function () {
+      var f = file.files && file.files[0];
+      fileName.textContent = f ? (f.name + ' · ' + adminFmtBytes(f.size)) : 'choose .bin file';
+      if (uploadBtn) uploadBtn.disabled = !f;
+    });
+    if (uploadBtn) uploadBtn.addEventListener('click', function () {
+      var f = file && file.files && file.files[0];
+      if (!f) return;
+      var version = ((versionEl && versionEl.value) || '').trim();
+      if (!/^\d{1,4}\.\d{1,4}$/.test(version)) { setState(uploadState, 'set a version like 1.23 first', 'err'); return; }
+      if (!confirm('Publish "' + f.name + '" as v' + version + '?\n\nThe node will offer it on its /ota page.')) return;
+      uploadBtn.disabled = true;
+      setState(uploadState, 'uploading ' + adminFmtBytes(f.size) + '...');
+      var fd = new FormData();
+      fd.append('action', 'upload');
+      fd.append('firmware', f);
+      fd.append('version', version);
+      fetch('./avian/api/ota-server.php', { method: 'POST', body: fd, credentials: 'same-origin' })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (res.ok && res.j && res.j.ok) { renderAdminOta(); }
+          else setState(uploadState, (res.j && res.j.error) || 'upload failed', 'err');
+          if (uploadBtn) uploadBtn.disabled = false;
+        })
+        .catch(function () { setState(uploadState, 'network error', 'err'); if (uploadBtn) uploadBtn.disabled = false; });
     });
   }
 
