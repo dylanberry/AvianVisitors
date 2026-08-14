@@ -72,7 +72,7 @@ workstation agent cannot prompt for the Pi sudo password. If the entry is
 missing, the script prints the command to create it. On the Pi:
 
 ```bash
-echo 'dylanberry ALL=(root) NOPASSWD: /usr/bin/cp /tmp/Caddyfile /etc/caddy/Caddyfile, /usr/bin/systemctl reload caddy, /usr/bin/chown -R caddy:caddy /home/dylanberry/BirdNET-Pi/avian/ota, /usr/bin/rm -f /etc/sudoers.d/avian-deploy' \
+echo 'dylanberry ALL=(root) NOPASSWD: /usr/bin/cp /tmp/Caddyfile /etc/caddy/Caddyfile, /usr/bin/systemctl reload caddy, /usr/bin/chown -R caddy\:caddy /home/dylanberry/BirdNET-Pi/avian/ota, /usr/bin/rm -f /etc/sudoers.d/avian-deploy' \
   | sudo tee /etc/sudoers.d/avian-deploy \
   && sudo chmod 440 /etc/sudoers.d/avian-deploy \
   && sudo visudo -c

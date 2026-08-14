@@ -32,7 +32,7 @@ Run the following on the Pi to grant passwordless sudo for this deploy only:
 
 ssh ${PI_USER}@${PI_HOST}
 
-echo '${PI_USER} ALL=(root) NOPASSWD: /usr/bin/cp /tmp/Caddyfile /etc/caddy/Caddyfile, /usr/bin/systemctl reload caddy, /usr/bin/chown -R caddy:caddy ${PI_AVIAN_DIR}/ota, /usr/bin/rm -f ${SUDOERS_FILE}' | sudo tee ${SUDOERS_FILE} && sudo chmod 440 ${SUDOERS_FILE} && sudo visudo -c
+echo '${PI_USER} ALL=(root) NOPASSWD: /usr/bin/cp /tmp/Caddyfile /etc/caddy/Caddyfile, /usr/bin/systemctl reload caddy, /usr/bin/chown -R caddy\:caddy ${PI_AVIAN_DIR}/ota, /usr/bin/rm -f ${SUDOERS_FILE}' | sudo tee ${SUDOERS_FILE} && sudo chmod 440 ${SUDOERS_FILE} && sudo visudo -c
 
 Then run this script again. The sudoers file is removed automatically at the end.
 
