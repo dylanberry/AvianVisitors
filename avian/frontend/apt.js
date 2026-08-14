@@ -3695,12 +3695,12 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
       'node fetches ota-version.txt + this file over HTTP');
     html += '</div>';
 
-    html += '<div class="admin-ota">';
-    html += '<h2 class="admin-section-head">automatic updates</h2>';
-    html += '<div class="admin-settings">'
+    var settingsSection = ''
+      + '<h2 class="admin-section-head">automatic updates</h2>'
+      + '<div class="admin-settings">'
       + settingsToggle('otaEnabled', 'Serve automatic updates', 'when off, the node reports "up to date" (version file mirrors node firmware)', !!cfg.enabled)
       + '<div class="menu-row">'
-      + '  <div><span class="label">Version</span><span class="hint">published as ota-version.txt · must be newer than node firmware</span></div>'
+      + '  <div><span class="label">Version</span><span class="hint">' + (art ? 'published as ota-version.txt · must be newer than node firmware' : 'staged — upload a build below to publish it') + '</span></div>'
       + '  <input id="otaVersion" type="text" inputmode="decimal" value="' + adminEsc(cfg.version || '') + '" placeholder="1.23">'
       + '</div>'
       + '<div class="menu-row">'
@@ -3713,8 +3713,9 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
       + '</div>'
       + '</div>';
 
-    html += '<h2 class="admin-section-head">publish firmware</h2>';
-    html += '<div class="admin-action ota-upload">'
+    var publishSection = ''
+      + '<h2 class="admin-section-head">publish firmware</h2>'
+      + '<div class="admin-action ota-upload">'
       + '<h4>Upload a build</h4>'
       + '<p>App-only image from <code>.pio/build/esp32-s3-devkitc-1/firmware.bin</code> (pio run). The node\'s /ota page will offer it once its own version is older.</p>'
       + '<label class="ota-file"><input id="otaFile" type="file" accept=".bin,application/octet-stream"><span id="otaFileName">choose .bin file</span></label>'
@@ -3723,6 +3724,11 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
       + '  <button type="button" id="otaUploadBtn" disabled>upload + publish</button>'
       + '</div>'
       + '</div>';
+
+    // With nothing published yet, surface the upload first - saving a
+    // version alone publishes nothing (the server refuses to serve a
+    // version with no artifact behind it).
+    html += art ? (settingsSection + publishSection) : (publishSection + settingsSection);
     html += '</div>';
     return html;
   }

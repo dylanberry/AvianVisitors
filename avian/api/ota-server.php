@@ -162,6 +162,15 @@ if ($action === 'upload') {
     if ($head === '' || ord($head[0]) !== 0xE9) {
         ota_fail(400, 'not an ESP32 app image (missing 0xE9 magic byte)');
     }
+    // Merged USB images embed the partition table at flash offset 0x8000
+    // (magic 0xAA 0x50); an app-only image has arbitrary code there. This
+    // catches factory.bin even though both start with the 0xE9 header.
+    if (filesize($file['tmp_name']) >= 0x8002) {
+        $at0x8000 = (string)file_get_contents($file['tmp_name'], false, null, 0x8000, 2);
+        if ($at0x8000 !== '' && ord($at0x8000[0]) === 0xAA && ord($at0x8000[1]) === 0x50) {
+            ota_fail(400, 'this looks like a merged USB firmware image (partition table at 0x8000) - OTA needs the app-only .bin from .pio/build/<env>/firmware.bin');
+        }
+    }
     $version = trim((string)($_POST['version'] ?? ''));
     if (!ota_valid_version($version)) {
         ota_fail(400, 'version must be in X.Y form (e.g. 1.23)');
@@ -198,14 +207,21 @@ if ($action === 'save') {
         ota_fail(400, 'bad json');
     }
     $cfg = ota_read_config();
+    $artifactPath = "$OTA_DIR/$ARTIFACT";
     if (array_key_exists('version', $json)) {
         $v = trim((string)$json['version']);
         if (!ota_valid_version($v)) {
             ota_fail(400, 'version must be in X.Y form (e.g. 1.23)');
         }
         $cfg['version'] = $v;
-        if ($cfg['enabled']) {
+        // Stage the version in the config. Publish it (write ota-version.txt)
+        // only when a firmware artifact exists to back it - otherwise the
+        // node would offer a download that 404s. A stale published version
+        // is cleared when there is nothing to serve.
+        if ($cfg['enabled'] && is_file($artifactPath)) {
             file_put_contents($VERSION_FILE, $v);
+        } elseif ($cfg['enabled'] && !is_file($artifactPath)) {
+            @unlink($VERSION_FILE);
         }
     }
     if (array_key_exists('node_url', $json)) {
@@ -216,15 +232,20 @@ if ($action === 'save') {
         $cfg['node_url'] = $u;
     }
     if (array_key_exists('enabled', $json)) {
+        $wasEnabled = $cfg['enabled'];
         $cfg['enabled'] = (bool)$json['enabled'];
-        if ($cfg['enabled']) {
-            // Re-arm: publish the configured version again. Without a version
-            // the node's check would fail on an empty ota-version.txt.
+        if ($cfg['enabled'] && !$wasEnabled) {
+            // Just turned on: publish the configured version. Nothing to
+            // serve without an artifact - refuse rather than publish a
+            // version the node would fail to download.
+            if (!is_file($artifactPath)) {
+                ota_fail(400, 'upload a firmware build first - there is nothing to serve yet');
+            }
             if (!ota_valid_version($cfg['version'])) {
                 ota_fail(400, 'set a version (X.Y) before enabling automatic updates');
             }
             file_put_contents($VERSION_FILE, $cfg['version']);
-        } else {
+        } elseif (!$cfg['enabled']) {
             // Disable: point the version file at the node's CURRENT firmware
             // so the node reports "up to date" instead of offering updates.
             $node = ota_probe_node($cfg['node_url']);
