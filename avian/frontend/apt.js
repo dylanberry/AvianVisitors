@@ -2102,13 +2102,24 @@
       statusEl.textContent = msg || '';
       statusEl.className = 'live-status' + (isErr ? ' err' : '');
     }
-    function startAudio() {
+    // Mic-node live-audio coordination (avian/api/live-audio.php): start asks
+    // the node to switch from burst to continuous streaming so the icecast
+    // feed is gap-free; end returns it to its previous mode. Resolves when the
+    // server has restarted livestream and the icecast mount is registered, so
+    // the caller can open the audio element against a live mount.
+    function birdUpLiveAudio(action) {
+      return fetch('./avian/api/live-audio.php?action=' + action, { credentials: 'same-origin', cache: 'no-store' }).catch(function () {});
+    }
+    function startAudio(attempt) {
+      attempt = attempt || 0;
       // Create the Audio element and resolve on the first "playing"
       // event (success). The browser will hang the network request
       // open for an icecast stream - that's normal - and "playing"
       // fires as soon as the first audio frame is decoded. We don't
       // race a timeout because icecast can take 1-10s to warm up
-      // depending on tunnel + bitrate.
+      // depending on tunnel + bitrate. If the mount wasn't ready yet
+      // the element errors immediately (404); retry a few times with
+      // a short backoff before giving up.
       return new Promise(function (resolve, reject) {
         liveEl = new Audio('/stream?t=' + Date.now());
         // No crossOrigin - the stream is same-origin via the worker
@@ -2121,17 +2132,24 @@
         });
         liveEl.addEventListener('error', function () {
           if (settled) return;
-          settled = true;
+          settled = true;   // abandon this attempt
+          if (attempt < 3) {
+            liveEl.src = ''; liveEl = null;
+            setTimeout(function () { startAudio(attempt + 1).then(resolve, reject); }, 800);
+            return;
+          }
           reject(new Error('stream error - check /#admin=system'));
         });
         audioClaim(stopAudio);   // stop any card / modal-recording audio
         liveEl.play().catch(function (e) {
           if (settled) return;
-          settled = true; reject(e);
+          settled = true;
+          reject(e);
         });
       });
     }
     function stopAudio() {
+      birdUpLiveAudio('end');   // node returns to its pre-session mode (burst)
       audioRelease(stopAudio);
       if (specRaf) { cancelAnimationFrame(specRaf); specRaf = null; }
       if (liveEl) { try { liveEl.pause(); } catch (e) {} liveEl.src = ''; liveEl = null; }
@@ -2236,7 +2254,8 @@
       liveBox.setAttribute('data-on', 'true');
       liveBtn.innerHTML = stopIcon + '<span>stop</span>';
       setStatus('connecting...');
-      startAudio()
+      birdUpLiveAudio('start') // ask the mic node to stream continuously
+        .then(function () { return startAudio(); })
         .then(function () { setStatus('streaming from pi'); attachSpectrogram(); })
         .catch(function (err) {
           stopAudio();
@@ -2247,6 +2266,12 @@
             setStatus(msg, true);
           }
         });
+    });
+
+    // Leaving the page ends the session too: put the mic node back into its
+    // pre-session mode instead of letting it stream continuously until timeout.
+    window.addEventListener('beforeunload', function () {
+      if (liveBox.getAttribute('data-on') === 'true') birdUpLiveAudio('end');
     });
   }
 
