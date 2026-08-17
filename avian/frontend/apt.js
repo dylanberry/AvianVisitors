@@ -3750,10 +3750,27 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
       + '</div>'
       + '</div>';
 
+    var tokenSection = ''
+      + '<h2 class="admin-section-head">deploy token</h2>'
+      + '<div class="admin-settings">'
+      + '<div class="menu-row">'
+      + '  <div><span class="label">Upload token</span>'
+      + '    <span class="hint">' + (j.token_set ? 'set — scripts can publish via Authorization: Bearer' : 'not set — only the browser UI can publish') + '</span>'
+      + '  </div>'
+      + '</div>'
+      + '<div class="menu-save-row">'
+      + '  <span class="save-state" id="otaTokenState"></span>'
+      + '  <button type="button" id="otaTokenGen">' + (j.token_set ? 'rotate' : 'generate') + '</button>'
+      + (j.token_set ? '<button type="button" id="otaTokenRevoke">revoke</button>' : '')
+      + '</div>'
+      + '<div id="otaTokenOut" style="display:none"></div>'
+      + '</div>';
+
     // With nothing published yet, surface the upload first - saving a
     // version alone publishes nothing (the server refuses to serve a
     // version with no artifact behind it).
     html += art ? (settingsSection + publishSection) : (publishSection + settingsSection);
+    html += tokenSection;
     html += '</div>';
     return html;
   }
@@ -3829,6 +3846,61 @@ document.getElementById('modalMerlin').href = merlinUrl(sci);
           if (uploadBtn) uploadBtn.disabled = false;
         })
         .catch(function () { setState(uploadState, 'network error', 'err'); if (uploadBtn) uploadBtn.disabled = false; });
+    });
+    var tokenGen = document.getElementById('otaTokenGen');
+    var tokenRevoke = document.getElementById('otaTokenRevoke');
+    var tokenState = document.getElementById('otaTokenState');
+    var tokenOut = document.getElementById('otaTokenOut');
+    function tokenCall(op, confirmMsg) {
+      if (confirmMsg && !confirm(confirmMsg)) return;
+      if (tokenGen) tokenGen.disabled = true;
+      setState(tokenState, 'working...');
+      var fd = new FormData();
+      fd.append('action', 'token');
+      fd.append('op', op);
+      fetch('./avian/api/ota-server.php', { method: 'POST', body: fd, credentials: 'same-origin' })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (res.ok && res.j && res.j.ok) {
+            if (op === 'generate') {
+              var t = res.j.token || '';
+              tokenOut.style.display = 'block';
+              tokenOut.innerHTML = '<div class="menu-row">'
+                + '<div class="label-block"><span class="label">Token (shown once)</span>'
+                + '<span class="hint">Store it now — e.g. <code>export BIRD_OTA_TOKEN=\'' + adminEsc(t) + '\'</code> for tsim7080g-node/publish.sh. Rotating invalidates it.</span></div>'
+                + '</div>'
+                + '<div class="menu-save-row">'
+                + '<span class="save-state" id="otaTokenCopyState"></span>'
+                + '<button type="button" id="otaTokenCopy">copy</button>'
+                + '</div>';
+              var copyBtn = document.getElementById('otaTokenCopy');
+              var copyState = document.getElementById('otaTokenCopyState');
+              if (copyBtn) copyBtn.addEventListener('click', function () {
+                navigator.clipboard.writeText(t).then(function () {
+                  if (copyState) { copyState.textContent = 'copied'; copyState.className = 'save-state ok'; }
+                });
+              });
+              setState(tokenState, 'token issued', 'ok');
+              if (tokenGen) tokenGen.textContent = 'rotate';
+              if (tokenRevoke) tokenRevoke.style.display = '';
+            } else {
+              tokenOut.style.display = 'none';
+              setState(tokenState, 'token revoked', 'ok');
+              if (tokenGen) { tokenGen.textContent = 'generate'; }
+              if (tokenRevoke) tokenRevoke.style.display = 'none';
+            }
+          } else {
+            setState(tokenState, (res.j && res.j.error) || 'failed', 'err');
+          }
+          if (tokenGen) tokenGen.disabled = false;
+        })
+        .catch(function () { setState(tokenState, 'network error', 'err'); if (tokenGen) tokenGen.disabled = false; });
+    }
+    if (tokenGen) tokenGen.addEventListener('click', function () {
+      tokenCall('generate', tokenGen.textContent === 'rotate' ? 'Rotate the upload token? The old one stops working immediately.' : null);
+    });
+    if (tokenRevoke) tokenRevoke.addEventListener('click', function () {
+      tokenCall('revoke', 'Revoke the upload token? Scripted deploys will be blocked until a new one is generated.');
     });
   }
 

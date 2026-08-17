@@ -9,10 +9,19 @@
 // This endpoint is the admin side of that server: publish a new build,
 // set the published version, and see how the node is doing.
 //
-// Endpoints (mutations require the birdup_admin session cookie):
+// Endpoints (mutations require the birdup_admin session cookie; a valid
+// OTA upload token - Authorization: Bearer <token> or a token= field -
+// grants the same upload/status/save access for scripted deploys):
 //   GET                                        -> server + node status JSON
 //   POST multipart {action: upload, firmware: <file>, version} -> publish build
 //   POST json {action: save, version?, node_url?, enabled?}      -> update config
+//   POST {action: token, op: generate|revoke}  -> issue/rotate or remove the
+//                                                  upload token (session only)
+//
+// Only the sha256 hash of the token is stored at <ota>/upload-token. The
+// raw token is returned exactly once when generated, and must be copied
+// into the deploy environment (e.g. $BIRD_OTA_TOKEN for publish.sh).
+// Caddy's file_server for /avian/ota/* hides upload-token + ota-config.json.
 //
 // Static files under ~/BirdNET-Pi/avian/ota/ are served publicly by Caddy
 // at /avian/ota/* (no auth - the node fetches them unauthenticated).
@@ -24,10 +33,10 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 require_once __DIR__ . '/auth.inc.php';
-av_require_auth();
 
 $AVIAN_DIR     = dirname(__DIR__);                  // ~/BirdNET-Pi/avian
 $OTA_DIR       = "$AVIAN_DIR/ota";
+$TOKEN_FILE    = "$OTA_DIR/upload-token";
 // Fixed artifact name - MUST match FW_OTA_ARTIFACT_STR compiled into the
 // node (src/main.cpp, XIAO_OTA_ARTIFACT for BOARD_T_SIM7080G).
 $ARTIFACT      = 'birdnode-e79dd8.bin';
@@ -95,6 +104,84 @@ function ota_fail(int $code, string $msg): void
     exit;
 }
 
+/** Raw stored sha256 hash of the upload token, or '' if none is set. */
+function ota_token_stored(): string
+{
+    global $TOKEN_FILE;
+    return is_readable($TOKEN_FILE) ? trim((string)file_get_contents($TOKEN_FILE)) : '';
+}
+
+/** Extract the caller's token from the Authorization header or token= field. */
+function ota_bearer_token(): string
+{
+    $auth = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? '');
+    if ($auth !== '' && preg_match('/^Bearer\s+(\S+)$/i', $auth, $m)) {
+        return $m[1];
+    }
+    $field = $_POST['token'] ?? null;
+    return is_string($field) ? trim($field) : '';
+}
+
+/** Timing-safe check that the stored hash matches a provided token. */
+function ota_token_valid(string $provided): bool
+{
+    $stored = ota_token_stored();
+    if ($stored === '' || $provided === '') {
+        return false;
+    }
+    return hash_equals($stored, hash('sha256', $provided));
+}
+
+/** Auth gate: the birdup_admin session OR a valid upload token opens the API. */
+function ota_require_auth(): void
+{
+    av_init_session();
+
+    if (!av_auth_enabled()) {
+        return; // no AV_AUTH_HASH: auth is effectively disabled (matches av_require_auth)
+    }
+
+    if (av_is_authenticated()) {
+        av_refresh_session();
+        return;
+    }
+
+    if (ota_token_valid(ota_bearer_token())) {
+        return;
+    }
+
+    http_response_code(401);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode(['error' => 'unauthorized']);
+    exit;
+}
+
+/** Generate a fresh token, store its sha256 hash, return the raw token once. */
+function ota_generate_token(): string
+{
+    global $TOKEN_FILE;
+    $token = bin2hex(random_bytes(32));
+    if (!is_dir(dirname($TOKEN_FILE)) && !@mkdir(dirname($TOKEN_FILE), 0775, true)) {
+        ota_fail(500, 'cannot create ' . dirname($TOKEN_FILE));
+    }
+    if (@file_put_contents($TOKEN_FILE, hash('sha256', $token)) === false) {
+        ota_fail(500, 'could not store upload token (check permissions on ' . dirname($TOKEN_FILE) . ')');
+    }
+    return $token;
+}
+
+/** Remove the upload token entirely (disables scripted deploys). */
+function ota_revoke_token(): void
+{
+    global $TOKEN_FILE;
+    if (is_file($TOKEN_FILE)) {
+        @unlink($TOKEN_FILE);
+    }
+}
+
+ota_require_auth();
+
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
@@ -128,6 +215,7 @@ if ($method === 'GET') {
         'config'          => $cfg,
         'node'            => $node,
         'update_available'=> $updateAvailable,
+        'token_set'       => ota_token_stored() !== '',
     ]);
     exit;
 }
@@ -258,6 +346,28 @@ if ($action === 'save') {
     }
     echo json_encode(['ok' => true, 'config' => $cfg]);
     exit;
+}
+
+if ($action === 'token') {
+    // Issuing/rotating the credential is a session-only operation - a valid
+    // upload token must not be able to mint or revoke itself.
+    if (!av_is_authenticated()) {
+        ota_fail(403, 'session required to manage the upload token');
+    }
+    $op = is_array($json)
+        ? (string)($json['op'] ?? '')
+        : (string)($_POST['op'] ?? '');
+    if ($op === 'generate') {
+        $token = ota_generate_token();
+        echo json_encode(['ok' => true, 'token' => $token]);
+        exit;
+    }
+    if ($op === 'revoke') {
+        ota_revoke_token();
+        echo json_encode(['ok' => true, 'token_set' => false]);
+        exit;
+    }
+    ota_fail(400, 'unknown token op');
 }
 
 ota_fail(400, 'unknown action');
