@@ -55,8 +55,6 @@ whitelist_species_list.txt
 .claude/
 # OpenCode / omo workspace plans and continuation state
 .omo/
-# Project context contains local network, credentials, and deployment notes
-CONTEXT.md
 # Live deployment Caddyfile contains the real bcrypt hash
 docs/deployment/Caddyfile
 # Large source / reference imagery kept on disk for working
