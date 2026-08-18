@@ -9,6 +9,8 @@
 //
 //   GET /avian/api/health.php
 //   -> {"ok":true,"as_of":"...","hostname":"...",
+//       "last_dump":{"exists":true,"last_dump_age_s":N,"last_dump":"..."},
+//       "freshness":{"audio_fresh":true,"source":"last_dump","age_s":N,"max_age_s":1800},
 //       "stream_data":{"exists":true,"file_count":N,"newest_age_s":N,"newest_name":"..."},
 //       "services":{"birdnet_analysis":"active",
 //                    "birdnet-dumpd":"active","caddy":"active"}}
@@ -26,6 +28,13 @@
 // (StreamData/.last-dump, written after every completed dump). The WAV files
 // themselves are consumed by birdnet_analysis within ~1-2 min, so the dir is
 // routinely empty between dumps - newest_wav_age is NOT a liveness signal.
+//
+// `freshness.audio_fresh` resolves the false negative: audio is fresh when
+// the .last-dump marker is fresh OR (WAVs exist and the newest is fresh,
+// covering first-boot/marker-missing windows). An empty dir with a fresh
+// marker means the node dumped and analysis already consumed the files -
+// audio IS flowing. Probes should gate on `freshness.audio_fresh`, never on
+// `stream_data.newest_age_s` alone (null/empty between dumps).
 
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
@@ -38,9 +47,10 @@ header('Cache-Control: no-store');
 $BIRDSONGS_DIR = dirname(__DIR__, 3) . '/BirdSongs';
 $STREAM_DIR = "$BIRDSONGS_DIR/StreamData";
 
-// Mic node freshness is checked by newest StreamData WAV mtime; the node
-// TCP-dumps ~5 min buffers every 5 min (battery + ECO duty cycle), so a
-// growing age is the earliest signal of node/dumpd trouble.
+// Mic node freshness is judged by the dumpd heartbeat marker (WAV mtime
+// alone would false-negative: the dir is routinely empty between dumps).
+// The node TCP-dumps ~5 min buffers every 5 min (battery + ECO duty cycle),
+// so a growing marker age is the earliest signal of node/dumpd trouble.
 const FRESHNESS_MAX_S = 1800; // probe-side threshold; mirrored in probe.py
 
 function shellout(string $cmd): string {
@@ -77,6 +87,33 @@ function read_streamdata(string $dir): array {
     ];
 }
 
+// Single authoritative freshness verdict for probes. Resolves the
+// empty-dir false negative: the marker is the primary signal; WAV mtime is
+// only corroboration (normally the dir is empty - analysis consumed the
+// files - so a bare WAV check would wrongly report no audio).
+function compute_freshness(array $lastDump, array $stream): array {
+    $fresh = false;
+    $source = 'none';
+    $age = null;
+
+    if ($lastDump['exists'] && ($lastDump['last_dump_age_s'] ?? PHP_INT_MAX) <= FRESHNESS_MAX_S) {
+        $fresh = true;
+        $source = 'last_dump';
+        $age = $lastDump['last_dump_age_s'];
+    }
+    if (($stream['newest_age_s'] ?? null) !== null && $stream['newest_age_s'] <= FRESHNESS_MAX_S) {
+        $fresh = true;
+        $source = $source === 'last_dump' ? 'both' : 'stream_wav';
+        $age = $age === null ? $stream['newest_age_s'] : min($age, $stream['newest_age_s']);
+    }
+    return [
+        'audio_fresh' => $fresh,
+        'source'      => $source,
+        'age_s'       => $age,
+        'max_age_s'   => FRESHNESS_MAX_S,
+    ];
+}
+
 // Read-only systemctl queries work unprivileged (same as services_status()
 // in birdnet-status.php, which runs as the caddy/php-fpm user).
 $units = ['birdnet_analysis', 'birdnet-dumpd', 'caddy'];
@@ -86,11 +123,13 @@ foreach ($units as $u) {
 }
 
 $stream = read_streamdata($STREAM_DIR);
+$lastDump = read_last_dump($STREAM_DIR);
 echo json_encode([
     'ok'          => true,
     'as_of'       => date('c'),
     'hostname'    => trim(shellout('hostname')),
-    'last_dump'   => read_last_dump($STREAM_DIR),
+    'last_dump'   => $lastDump,
+    'freshness'   => compute_freshness($lastDump, $stream),
     'stream_data' => $stream,
     'services'    => $services,
 ]);
