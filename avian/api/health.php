@@ -21,6 +21,11 @@
 // must never need AV_AUTH_HASH / the birdup_admin session. If this endpoint
 // ever needs protection, move it behind Caddy basic_auth with a dedicated
 // monitoring credential - do NOT reuse the admin session.
+//
+// Freshness: `last_dump` comes from birdnet-dumpd's heartbeat marker
+// (StreamData/.last-dump, written after every completed dump). The WAV files
+// themselves are consumed by birdnet_analysis within ~1-2 min, so the dir is
+// routinely empty between dumps - newest_wav_age is NOT a liveness signal.
 
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
@@ -42,6 +47,16 @@ function shellout(string $cmd): string {
     $rc = 0; $out = [];
     exec($cmd . ' 2>&1', $out, $rc);
     return implode("\n", $out);
+}
+
+function read_last_dump(string $dir): array {
+    $f = "$dir/.last-dump";
+    if (!is_file($f)) return ['exists' => false];
+    return [
+        'exists'          => true,
+        'last_dump_age_s' => time() - (int)@filemtime($f),
+        'last_dump'       => trim((string)@file_get_contents($f)),
+    ];
 }
 
 function read_streamdata(string $dir): array {
@@ -75,6 +90,7 @@ echo json_encode([
     'ok'          => true,
     'as_of'       => date('c'),
     'hostname'    => trim(shellout('hostname')),
+    'last_dump'   => read_last_dump($STREAM_DIR),
     'stream_data' => $stream,
     'services'    => $services,
 ]);
