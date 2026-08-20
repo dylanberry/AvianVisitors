@@ -1,0 +1,16 @@
+[Unit]
+Description=BirdNET-Pi UDP2 recording (mic node push stream)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Replace <USER> with the BirdNET-Pi user (dylanberry on this install).
+ExecStart=/usr/local/bin/birdnet-udp2-recording.sh
+User=<USER>
+Restart=always
+RestartSec=3
+Environment=HOME=/home/<USER>
+
+[Install]
+WantedBy=multi-user.target

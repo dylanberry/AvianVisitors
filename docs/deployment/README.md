@@ -12,15 +12,25 @@ Toronto Raspberry Pi 4 deployment.
   (confidence, sensitivity, audio gain, coordinates placeholder).
 - `analysis.py.patch` — patch for `BirdNET-Pi/scripts/utils/analysis.py` to
   apply the configurable `AUDIO_GAIN` before analysis.
+- `birdnet_analysis.py.patch` — patch for `BirdNET-Pi/scripts/birdnet_analysis.py`:
+  a WAV that raises during analysis (corrupt/truncated, e.g. a writer that
+  died mid-segment) is deleted instead of being left in StreamData forever
+  as an orphan that is retried (and fails) on every service restart.
+- `avian/mic-node/` — the Pi-side mic-node receivers (buffered dump daemon + UDP2
+  fallback + systemd units + install notes). See [`avian/mic-node/README.md`](../../avian/mic-node/README.md).
 - `crontab-alsa.txt` — ALSA commands to set the USB mic to 100% capture volume
   and disable AGC on every boot.
 
 ## Applying
 
+0. Install the mic-node receivers per [`avian/mic-node/README.md`](../../avian/mic-node/README.md)
+   (`birdnet-dumpd` is the active audio path; `birdnet-udp2` is the fallback).
+
 1. Copy `Caddyfile.sample` to `/etc/caddy/Caddyfile`, replace the bcrypt hash
    placeholder with your own password, adjust the root path and any hostnames,
    then `sudo caddy reload`.
-2. Apply `analysis.py.patch` in your `BirdNET-Pi` directory.
+2. Apply `analysis.py.patch` and `birdnet_analysis.py.patch` in your
+   `BirdNET-Pi` directory.
 3. Merge the values from `birdnet.conf.example` into your `birdnet.conf`.
 4. Add the two `@reboot` lines from `crontab-alsa.txt` to the Pi user's crontab.
 

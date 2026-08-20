@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""birdnet-dumpd — receive buffered-audio dumps from the T-SIM7080G mic node.
+
+The node records continuously (48 kHz -> 24 kHz IMA-ADPCM, PSRAM ring) with
+its WiFi radio off, and dumps the ring over TCP (:8557) on a duty cycle.
+This service decodes the dump and writes 15 s, 24 kHz mono WAV segments into
+StreamData, named by CAPTURE time:
+
+    %Y-%m-%d-birdnet-UDP2-%H:%M:%S.wav
+
+birdnet_analysis consumes them unchanged: ParseFileName takes the detection
+date/time from the filename, and librosa resamples 24 kHz -> 48 kHz on load.
+So backdated dumps appear on the Bird Up! collage/timeline at the true
+capture time even though they arrive minutes late.
+
+Dump protocol (see docs/buffered-recording-spec.md in the node repo):
+
+    BUDP1\n
+    node=<id>\n
+    encoding=ima-adpcm\n
+    rate=24000\n
+    frame_samples=512\n
+    frames=N\n
+    capture_start_epoch=<unix sec, 0 = unknown>\n
+    dropped_frames=<lifetime counter>\n
+    \n
+    <N * 260 raw frame bytes>
+
+Frame layout (260 B): int16 LE predictor | uint8 step index | uint8 reserved |
+256 B = 512 nibbles (low nibble = earlier sample). Frames are independent.
+
+Replies "OK\n" after the last frame is received and flushed.
+"""
+
+import logging
+import os
+import socket
+import struct
+import sys
+import time
+import wave
+
+LISTEN_PORT = 8557
+FRAME_BYTES = 260
+FRAME_SAMPLES = 512
+SEGMENT_SECONDS = 15
+
+RECS_DIR = os.environ.get("RECS_DIR", os.path.expanduser("~/BirdSongs"))
+STREAM_DATA = os.path.join(RECS_DIR, "StreamData")
+# Liveness marker for external health checks: written after every completed
+# dump. StreamData WAVs are consumed by birdnet_analysis within ~1-2 min of
+# landing, so the dir is routinely EMPTY between dumps and "newest .wav" is
+# not a reliable signal. The marker's mtime = last successful dump arrival;
+# read by avian/api/health.php on the Pi (Bird Up! k8s birdup-health probe).
+HEARTBEAT_FILE = os.path.join(STREAM_DATA, ".last-dump")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [dumpd] %(levelname)s %(message)s",
+)
+log = logging.getLogger("dumpd")
+
+# ---------------------------------------------------------------------------
+# IMA ADPCM decoder (standard tables; must match the node encoder)
+# ---------------------------------------------------------------------------
+
+IMA_STEP = [
+    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+    50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230,
+    253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+    1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327,
+    3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442,
+    11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,
+    32767,
+]
+IMA_INDEX = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
+
+
+def decode_frame(frame: bytes) -> list:
+    """260-byte frame -> list of 512 int16 samples."""
+    predictor = struct.unpack_from("<h", frame, 0)[0]
+    index = frame[2]
+    if index > 88:
+        index = 88
+    out = []
+    data = frame[4:]
+    for byte in data:
+        for nibble in (byte & 0x0F, byte >> 4):
+            step = IMA_STEP[index]
+            delta = step >> 3
+            if nibble & 4:
+                delta += step
+            if nibble & 2:
+                delta += step >> 1
+            if nibble & 1:
+                delta += step >> 2
+            predictor += -delta if (nibble & 8) else delta
+            predictor = max(-32768, min(32767, predictor))
+            index += IMA_INDEX[nibble]
+            index = max(0, min(88, index))
+            out.append(predictor)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Segment writer: slices the PCM stream into 15 s WAVs named by capture time
+# ---------------------------------------------------------------------------
+
+class SegmentWriter:
+    def __init__(self, rate: int, start_epoch: float):
+        self.rate = rate
+        self.next_seg_epoch = start_epoch   # epoch of the next sample written
+        self.samples_into_seg = 0
+        self.wav = None
+        self.path = None
+        self.segments_written = 0
+
+    def _open_segment(self):
+        seg_epoch = self.next_seg_epoch
+        name = time.strftime("%Y-%m-%d-birdnet-UDP2-%H:%M:%S.wav",
+                             time.localtime(seg_epoch))
+        self.path = os.path.join(STREAM_DATA, name)
+        self.wav = wave.open(self.path, "wb")
+        self.wav.setnchannels(1)
+        self.wav.setsampwidth(2)
+        self.wav.setframerate(self.rate)
+        self.samples_into_seg = 0
+
+    def _close_segment(self):
+        if self.wav:
+            self.wav.close()
+            self.segments_written += 1
+            log.info("wrote %s", os.path.basename(self.path))
+            self.wav = None
+            self.path = None
+
+    def write(self, samples: list):
+        seg_len = SEGMENT_SECONDS * self.rate
+        i = 0
+        while i < len(samples):
+            if self.wav is None:
+                self._open_segment()
+            n = min(seg_len - self.samples_into_seg, len(samples) - i)
+            self.wav.writeframes(struct.pack("<%dh" % n, *samples[i:i + n]))
+            self.samples_into_seg += n
+            self.next_seg_epoch += n / self.rate
+            i += n
+            if self.samples_into_seg >= seg_len:
+                self._close_segment()
+
+    def close(self):
+        # Partial trailing segment is still valid audio; close it so analysis
+        # picks it up (it matches on filename, any length is fine).
+        self._close_segment()
+
+
+def touch_heartbeat(bytes_total: int, segments: int) -> None:
+    """Record a successful dump arrival (survives analysis consumption)."""
+    try:
+        with open(HEARTBEAT_FILE, "w") as f:
+            f.write("%s %d bytes %d segments\n"
+                    % (time.strftime("%Y-%m-%dT%H:%M:%S%z"), bytes_total, segments))
+    except OSError as exc:
+        log.error("heartbeat marker write failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Connection handling
+# ---------------------------------------------------------------------------
+
+def read_header(conn: socket.socket) -> dict:
+    buf = b""
+    while b"\n\n" not in buf:
+        chunk = conn.recv(1024)
+        if not chunk:
+            raise ConnectionError("eof during header")
+        buf += chunk
+        if len(buf) > 4096:
+            raise ValueError("header too large")
+    head, rest = buf.split(b"\n\n", 1)
+    lines = head.decode("ascii", "replace").strip().split("\n")
+    if not lines or lines[0] != "BUDP1":
+        raise ValueError("bad magic")
+    fields = {}
+    for line in lines[1:]:
+        if "=" in line:
+            k, v = line.split("=", 1)
+            fields[k.strip()] = v.strip()
+    if fields.get("encoding") != "ima-adpcm":
+        raise ValueError("unsupported encoding: %s" % fields.get("encoding"))
+    return fields, rest
+
+
+def handle(conn: socket.socket, addr):
+    # Timeouts must cover the WHOLE exchange, including the header: a node that
+    # panics/reboots mid-dump leaves a half-open corpse; blocking on it forever
+    # wedges this single-threaded daemon (field-observed 2026-08-17: every dump
+    # failed until restart). Keepalive reaps corpses even if a code path blocks.
+    conn.settimeout(60)
+    conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    if hasattr(socket, "TCP_KEEPIDLE"):
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+    fields, rest = read_header(conn)
+    rate = int(fields.get("rate", 24000))
+    frames = int(fields["frames"])
+    capture_start = float(fields.get("capture_start_epoch", "0"))
+    dropped = int(fields.get("dropped_frames", "0"))
+    if capture_start <= 0:
+        capture_start = time.time() - frames * FRAME_SAMPLES / rate
+        log.warning("dump from %s had no capture timestamp; using arrival-based time", addr)
+
+    log.info("dump from %s: %d frames (%.1f s), capture_start=%s, node_dropped=%d",
+             addr, frames, frames * FRAME_SAMPLES / rate,
+             time.strftime("%H:%M:%S", time.localtime(capture_start)), dropped)
+
+    writer = SegmentWriter(rate, capture_start)
+    need = frames * FRAME_BYTES
+    got = 0
+    pending = rest
+    while got < need:
+        if not pending:
+            chunk = conn.recv(1 << 16)
+            if not chunk:
+                raise ConnectionError("eof at %d/%d bytes" % (got, need))
+            pending = chunk
+        # decode whole frames out of pending
+        whole = (len(pending) // FRAME_BYTES) * FRAME_BYTES
+        whole = min(whole, need - got)
+        if whole == 0:
+            # wait for more data to complete a frame
+            chunk = conn.recv(1 << 16)
+            if not chunk:
+                raise ConnectionError("eof at %d/%d bytes (partial frame)" % (got, need))
+            pending += chunk
+            continue
+        block, pending = pending[:whole], pending[whole:]
+        for off in range(0, whole, FRAME_BYTES):
+            writer.write(decode_frame(block[off:off + FRAME_BYTES]))
+        got += whole
+
+    writer.close()
+    conn.sendall(b"OK\n")
+    log.info("dump complete: %d bytes, %d segments", got, writer.segments_written)
+    touch_heartbeat(got, writer.segments_written)
+
+
+def main():
+    os.makedirs(STREAM_DATA, exist_ok=True)
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("0.0.0.0", LISTEN_PORT))
+    srv.listen(2)
+    log.info("listening on :%d, writing to %s", LISTEN_PORT, STREAM_DATA)
+    while True:
+        conn, addr = srv.accept()
+        try:
+            handle(conn, addr)
+        except Exception as exc:
+            log.error("dump from %s failed: %s", addr, exc)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,16 @@
+[Unit]
+Description=BirdNET-Pi buffered-dump receiver (mic node store-and-forward)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Replace <USER> with the BirdNET-Pi user (dylanberry on this install).
+ExecStart=/usr/local/bin/birdnet-dumpd.py
+User=<USER>
+Restart=always
+RestartSec=3
+Environment=HOME=/home/<USER>
+
+[Install]
+WantedBy=multi-user.target

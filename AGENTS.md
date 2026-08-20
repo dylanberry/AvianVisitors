@@ -62,7 +62,8 @@ key, OTA upload token). Never commit tokens, passwords, or hashes beyond the
   in PSRAM and TCP-dumps to the Pi on `:8557` every 5 min; `birdnet-dumpd`
   (systemd unit) decodes to 15 s StreamData WAVs named by **capture time**, so
   `birdnet_analysis` and detection timestamps need no changes. RTSP pull and
-  UDP burst push remain installed but idle as fallbacks. Details: node repo.
+  UDP burst push remain installed but idle as fallbacks. Receivers + install
+  notes: `avian/mic-node/`. Details: node repo.
 - **Live listening:** drawer player → `avian/api/live-audio.php?action=start|end`
   → node's `/api/live` switches burst ↔ continuous; `scripts/livestream.sh`
   takes raw PCM from `UDP_LIVESTREAM_PORT` (default 8556) → icecast `/stream`.
@@ -77,6 +78,12 @@ key, OTA upload token). Never commit tokens, passwords, or hashes beyond the
 
 ## Hard-won lessons
 
+- The birdnet venv must include **resampy**: dumpd writes 24 kHz WAVs and
+  `analysis.py` resamples with `res_type='kaiser_fast'` (resampy-only in
+  librosa). Without it every analysis fails and the StreamData backlog
+  crash-loops the service, flooding the journal (2026-08-17: 4k-file backlog,
+  journal vacuumed). Also: **rembg is pinned ≤2.0.68** — 2.0.70+ requires
+  pillow≥12.1, which violates streamlit's `pillow<12` constraint.
 - A Gemini API **429 can mean billing/credits exhausted**, not rate limiting.
 - Cutouts: **BiRefNet locally, u2netp only on the Pi** — u2netp over-removes
   pale plumage (belly/vent holes).

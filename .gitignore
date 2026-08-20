@@ -63,3 +63,5 @@ avian/assets/references/
 avian/assets/_legacy/
 # Playwright runner state
 test-results/
+# pi (coding agent) session data
+.pi/

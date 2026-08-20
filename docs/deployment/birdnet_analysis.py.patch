@@ -1,0 +1,19 @@
+--- a/scripts/birdnet_analysis.py
++++ b/scripts/birdnet_analysis.py
+@@ -98,6 +98,16 @@
+     except BaseException as e:
+         stderr = e.stderr.decode('utf-8') if isinstance(e, CalledProcessError) else ""
+         log.exception(f'Unexpected error: {stderr}', exc_info=e)
++        # A file that raises during analysis is un-analyzable (corrupt or
++        # truncated WAV, e.g. a writer that died mid-segment before
++        # finalizing headers). Retrying the same bytes on every service
++        # restart can never succeed, and the file would otherwise sit in
++        # StreamData forever as an orphan, so delete it.
++        try:
++            os.remove(file_name)
++            log.warning('Deleted un-analyzable file %s', file_name)
++        except OSError as del_err:
++            log.error('Could not delete un-analyzable file %s: %s', file_name, del_err)
+ 
+ 
+ def handle_reporting_queue(queue):
