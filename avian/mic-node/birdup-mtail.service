@@ -1,0 +1,15 @@
+[Unit]
+Description=mtail access-log exporter for Bird Up! Caddy logs (:3903)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/usr/local/bin/mtail
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mtail -logtostderr -port 3903 -logs /var/log/caddy/access.log -progs /etc/mtail -one_shot=false
+User=dylanberry
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

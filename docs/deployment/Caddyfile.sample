@@ -6,7 +6,34 @@
 # 2. Replace the hash below with your own.
 # 3. Copy this file to /etc/caddy/Caddyfile and run `sudo caddy reload`.
 
+{
+	admin 127.0.0.1:2019
+	# Built-in Prometheus metrics (served on the admin endpoint /metrics).
+	# Not reachable from the LAN — the :2020 site below proxies only /metrics.
+	metrics
+}
+
+# Prometheus scrape target for Caddy's own metrics (job birdup-caddy in the
+# homelab repo). Exposes ONLY the admin /metrics path; the admin API itself
+# stays loopback-bound. The cluster scrapes <PI_IP>:2020.
+:2020 {
+	handle /metrics {
+		reverse_proxy 127.0.0.1:2019 {
+			# Admin endpoint validates Host against its origins list.
+			header_up Host 127.0.0.1:2019
+		}
+	}
+}
+
+# (php-fpm status needs no HTTP route: the php-fpm exporter reads pool status
+# over the FastCGI unix socket — pm.status_path=/status on the pool.)
+
 http:// {
+	# JSON access log for mtail (:3903) — see avian/mic-node/caddy-logs.mtail.
+	log {
+		output file /var/log/caddy/access.log
+		format json
+	}
 	root * /home/YOUR_USER/BirdSongs/Extracted
 	file_server browse
 	handle /By_Date/* {

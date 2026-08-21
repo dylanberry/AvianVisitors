@@ -116,3 +116,22 @@ When editing `apt.js`, bump the cache-busting query string in `index.html`
 (`apt.js?v=r...`) so browsers load the new version. The live Caddyfile in
 `docs/deployment/Caddyfile` must stay in sync with `Caddyfile.sample` except for
 the real bcrypt hash and system-specific paths.
+
+## Monitoring exporter stack (branch: `scripts/deploy-monitoring-to-pi.sh`)
+
+See `avian/mic-node/README.md` §5 for the full table. Deployment notes that
+differ from the front-end deploy:
+
+- Runs as **dylanberry** except `birdup-phpfpm-exporter` (must read the
+  `caddy:caddy` FastCGI socket — runs as user caddy).
+- The Caddyfile now carries a `{ metrics }` global option (served on the
+  loopback admin endpoint :2019) plus a `:2020` site proxying only
+  `/metrics` for the cluster scrape; the admin API stays loopback-bound.
+- Access log: main site writes JSON to `/var/log/caddy/access.log`
+  (created `caddy:caddy` 0644; the packaged unit's ProtectSystem is fine —
+  /var/log is writable). mtail tails it as dylanberry.
+- php-fpm: `pm.status_path = /status` is enabled in the `www` pool by the
+  deploy script (single `sed` on `/etc/php/8.4/fpm/pool.d/www.conf` + php-fpm
+  restart). No status route is exposed over HTTP — the exporter reads the
+  pool status over the FastCGI socket directly, so nothing leaks on the LAN
+  or via the public birds.* path.

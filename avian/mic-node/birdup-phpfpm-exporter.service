@@ -1,0 +1,18 @@
+[Unit]
+Description=php-fpm status exporter for Bird Up! (:9253)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/usr/local/bin/php-fpm_exporter
+
+[Service]
+Type=simple
+# Must read the php-fpm FastCGI socket, owned by caddy:caddy (0600), so it
+# runs as the caddy user. Scrape URI is the unix socket + status path, not
+# an HTTP route: nothing exposes /status over the network.
+ExecStart=/usr/local/bin/php-fpm_exporter server --web.listen-address=0.0.0.0:9253 --phpfpm.scrape-uri=unix:///run/php/php8.4-fpm.sock;/status
+User=caddy
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

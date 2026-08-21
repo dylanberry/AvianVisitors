@@ -153,3 +153,37 @@ ls -lt ~/BirdSongs/StreamData/ | head
 # live toggle (Bird Up! drawer → LIVE AUDIO) — then both ports should flow:
 sudo tcpdump -i any -n udp port 8555 or port 8556   # (needs sudo)
 ```
+## 5. Prometheus exporter stack (node telemetry → cluster)
+
+The cluster scrapes sb-birdnet-pi4 for the full Bird Up! telemetry picture
+(see the homelab repo, `docs/birdup-prometheus-telemetry-plan.md`):
+
+| Port | Service (unit) | Exposes |
+|---|---|---|
+| 9558/tcp | `node-telemetry-exporter.py` (`birdup-exporter`) | `birdnode_*` node telemetry (tailed JSONL), `birdup_service_active`, dump heartbeat `.last-dump`, `birdup_detections_*` (incremental birds.db counters) |
+| 9100/tcp | `prometheus-node-exporter` (Debian pkg) | Pi host metrics (CPU/mem/disk/temp) |
+| 2020/tcp | Caddy site (`:2020` in Caddyfile) | Caddy built-in `/metrics` (proxied from the loopback admin endpoint) |
+| 9253/tcp | `php-fpm_exporter` (`birdup-phpfpm-exporter`, runs as caddy) | pool `www` status via the FastCGI unix socket (`pm.status_path=/status`) |
+| 3903/tcp | `mtail` (`birdup-mtail`) | Caddy access-log counts (`requests_total`/`status_total`/latency from `/var/log/caddy/access.log`) |
+
+Deploy the whole stack (idempotent; requires dylanberry passwordless sudo on
+the Pi):
+
+```bash
+./scripts/deploy-monitoring-to-pi.sh
+```
+
+This copies the exporter + units, validates+installs the Caddyfile, enables
+`pm.status_path` in `www.conf`, installs mtail + php-fpm_exporter binaries
+(arm64 GitHub releases), and smoke-tests every port. **The Pi is a deploy
+target, not a source of truth** — edit files in this repo, never ad-hoc on
+the Pi; back-port any emergency Pi hotfix the same day.
+
+Exporter details: the JSONL tail seeds from the newest line at startup (no
+history re-count), accumulates `birdnode_dump_records_total` from then on,
+and persists cumulative detection counters (rowid-based increments) in
+`~/.local/state/birdup-exporter/state.json` so restarts don't lose them.
+`dropped_frames` is exported as observed (per-boot counter); Prometheus
+`increase()`/`rate()` handle the boot reset. Never alert on WAV count —
+StreamData is routinely empty between dumps (analysis consumes them in
+1-2 min); the `.last-dump` marker is the liveness signal.

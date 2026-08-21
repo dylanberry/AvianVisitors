@@ -1,0 +1,31 @@
+# mtail program for Caddy JSON access logs (Bird Up! collage site).
+# Reads /var/log/caddy/access.log (written by the `log { output file ... }`
+# directive in docs/deployment/Caddyfile) and exposes request counters and
+# latency on :3903.
+#
+# Caddy emits one JSON object per request; the logger field is
+# "http.log.access.<logname>" (Caddy 2.11+), matched by prefix. mtail v3
+# requires named capture groups (?P<name>...) and they are block-scoped.
+
+counter requests_total by host
+counter methods_total by method
+counter status_total by class
+gauge latency_seconds by host
+
+/\"logger\":\"http\.log\.access/ {
+  /\"host\":\"(?P<host>[^\"]+)\"/ {
+    requests_total[$host]++
+
+    /\"duration\":(?P<dur>[0-9.]+)/ {
+      latency_seconds[$host] = $dur
+    }
+  }
+
+  /\"method\":\"([A-Z]+)\"/ {
+    methods_total[$1]++
+  }
+
+  /\"status\":(?P<status>[0-9]+)/ {
+    status_total[int($status / 100) * 100]++
+  }
+}

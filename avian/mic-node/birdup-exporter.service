@@ -1,0 +1,15 @@
+[Unit]
+Description=Bird Up! Prometheus exporter (node telemetry + backend + detections)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/node-telemetry-exporter.py
+User=dylanberry
+Restart=always
+RestartSec=5
+Environment=HOME=/home/dylanberry
+
+[Install]
+WantedBy=multi-user.target
