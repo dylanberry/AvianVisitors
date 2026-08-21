@@ -108,10 +108,12 @@ must stay up — `Restart=always` is in the unit. When dumpd is the active path,
 `RTSP_STREAM` in birdnet.conf is empty and `birdnet_recording` is inactive;
 `birdnet-udp2` can stay enabled but receives nothing.
 
-A successful dump also refreshes `StreamData/.last-dump` (heartbeat marker);
-`avian/api/health.php` judges mic-node freshness from it (WAVs are consumed
-by analysis ~1-2 min after landing, so the dir is routinely empty — mtime of
-the newest WAV is NOT a reliable liveness signal).
+A successful dump also refreshes `StreamData/.last-dump` (heartbeat marker).
+The cluster's birdup-exporter reads it (and the service states directly) for
+the `birdup_last_dump_timestamp_seconds` / `birdup_service_active` metrics —
+WAVs are consumed by analysis ~1-2 min after landing, so the dir is routinely
+empty and WAV mtime is NOT a reliable liveness signal. (`avian/api/health.php`
+served this role for the retired k8s birdup-health probe; it is gone.)
 
 ### Node telemetry (JSONL staging)
 
