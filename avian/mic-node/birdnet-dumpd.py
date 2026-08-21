@@ -22,7 +22,13 @@ Dump protocol (see docs/buffered-recording-spec.md in the node repo):
     frame_samples=512\n
     frames=N\n
     capture_start_epoch=<unix sec, 0 = unknown>\n
-    dropped_frames=<lifetime counter>\n
+    dropped_frames=<lifetime counter>
+    tl_v=1
+    <telemetry k=v lines — node fw v1.58+: fw_version, uptime_s, restart_count,
+    boot_reason, prev_reboot?, batt_mv, batt_pct, batt_chg, batt_vbus,
+    pmu_temp_c?, batt_mode, batt_eta_full_min, batt_life_min, esp_temp_c?,
+    rssi_dbm, tx_dbm, eco_mode, eco_effective, cpu_mhz, buf_pending_frames,
+    buf_used_pct, buf_dump_fails, capture_rate, dump_int_s>
     \n
     <N * 260 raw frame bytes>
 
@@ -30,8 +36,22 @@ Frame layout (260 B): int16 LE predictor | uint8 step index | uint8 reserved |
 256 B = 512 nibbles (low nibble = earlier sample). Frames are independent.
 
 Replies "OK\n" after the last frame is received and flushed.
+
+Telemetry: every dump attempt with a complete header (success OR failure)
+appends one JSON line to $NODE_TELEMETRY_DIR/node-telemetry-YYYY-MM-DD.jsonl
+(default ~/BirdNET-Pi/data/node-telemetry, UTC day files, 45-day retention
+via NODE_TELEMETRY_RETENTION_DAYS). The record is every header field
+(numeric-coerced) plus ts, src_ip, dump_ok, dump_bytes, segments,
+duration_s, and error (on failure). This is the staging point for a later
+Prometheus exporter — note dropped_frames is a per-BOOT lifetime counter
+(resets on node reboot; restart_count/boot_reason/prev_reboot identify the
+boot). Telemetry rides the existing dump connection, so the node's ECO
+radio duty cycle is unaffected.
 """
 
+import calendar
+import glob
+import json
 import logging
 import os
 import socket
@@ -53,6 +73,12 @@ STREAM_DATA = os.path.join(RECS_DIR, "StreamData")
 # not a reliable signal. The marker's mtime = last successful dump arrival;
 # read by avian/api/health.php on the Pi (Bird Up! k8s birdup-health probe).
 HEARTBEAT_FILE = os.path.join(STREAM_DATA, ".last-dump")
+
+# Node telemetry staging (one JSONL line per dump attempt; see module docstring).
+# NOT inside StreamData: that's the audio inbox swept by birdnet_analysis.
+TELEMETRY_DIR = os.environ.get(
+    "NODE_TELEMETRY_DIR", os.path.expanduser("~/BirdNET-Pi/data/node-telemetry"))
+TELEMETRY_RETENTION_DAYS = int(os.environ.get("NODE_TELEMETRY_RETENTION_DAYS", "45"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -165,6 +191,69 @@ def touch_heartbeat(bytes_total: int, segments: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Telemetry JSONL (per-dump-attempt record; staged for a later exporter)
+# ---------------------------------------------------------------------------
+
+_last_sweep_day = None
+
+
+_TELEMETRY_STRING_KEYS = {"node", "encoding", "boot_reason", "prev_reboot",
+                          "fw_version"}
+
+
+def _coerce(key: str, v: str):
+    if key in _TELEMETRY_STRING_KEYS:
+        return v
+    try:
+        return int(v)
+    except ValueError:
+        pass
+    try:
+        return float(v)
+    except ValueError:
+        return v
+
+
+def _sweep_telemetry(today: str) -> None:
+    """Once per UTC day, delete telemetry files older than the retention."""
+    global _last_sweep_day
+    if _last_sweep_day == today:
+        return
+    _last_sweep_day = today
+    cutoff = time.time() - TELEMETRY_RETENTION_DAYS * 86400
+    for path in glob.glob(os.path.join(TELEMETRY_DIR, "node-telemetry-*.jsonl")):
+        try:
+            day = os.path.basename(path)[len("node-telemetry-"):len("node-telemetry-") + 10]
+            if calendar.timegm(time.strptime(day, "%Y-%m-%d")) < cutoff:
+                os.remove(path)
+                log.info("telemetry retention: removed %s", path)
+        except (ValueError, OSError) as exc:
+            log.warning("telemetry retention: skipping %s: %s", path, exc)
+
+
+def write_telemetry(fields: dict, addr, ok: bool, bytes_got: int,
+                    segments: int, duration: float, error) -> None:
+    """Append one JSON line per dump attempt. Never breaks the dump path."""
+    try:
+        rec = {"ts": time.time(), "src_ip": addr[0], "dump_ok": ok,
+               "dump_bytes": bytes_got, "segments": segments,
+               "duration_s": round(duration, 2)}
+        if error:
+            rec["error"] = str(error)
+        for k, v in fields.items():
+            if k not in rec:
+                rec[k] = _coerce(k, v)
+        os.makedirs(TELEMETRY_DIR, exist_ok=True)
+        today = time.strftime("%Y-%m-%d", time.gmtime())
+        _sweep_telemetry(today)
+        with open(os.path.join(TELEMETRY_DIR,
+                               "node-telemetry-%s.jsonl" % today), "a") as f:
+            f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+    except Exception as exc:
+        log.error("telemetry write failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Connection handling
 # ---------------------------------------------------------------------------
 
@@ -203,6 +292,7 @@ def handle(conn: socket.socket, addr):
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
     fields, rest = read_header(conn)
+    t0 = time.time()
     rate = int(fields.get("rate", 24000))
     frames = int(fields["frames"])
     capture_start = float(fields.get("capture_start_epoch", "0"))
@@ -215,35 +305,46 @@ def handle(conn: socket.socket, addr):
              addr, frames, frames * FRAME_SAMPLES / rate,
              time.strftime("%H:%M:%S", time.localtime(capture_start)), dropped)
 
-    writer = SegmentWriter(rate, capture_start)
-    need = frames * FRAME_BYTES
     got = 0
-    pending = rest
-    while got < need:
-        if not pending:
-            chunk = conn.recv(1 << 16)
-            if not chunk:
-                raise ConnectionError("eof at %d/%d bytes" % (got, need))
-            pending = chunk
-        # decode whole frames out of pending
-        whole = (len(pending) // FRAME_BYTES) * FRAME_BYTES
-        whole = min(whole, need - got)
-        if whole == 0:
-            # wait for more data to complete a frame
-            chunk = conn.recv(1 << 16)
-            if not chunk:
-                raise ConnectionError("eof at %d/%d bytes (partial frame)" % (got, need))
-            pending += chunk
-            continue
-        block, pending = pending[:whole], pending[whole:]
-        for off in range(0, whole, FRAME_BYTES):
-            writer.write(decode_frame(block[off:off + FRAME_BYTES]))
-        got += whole
+    segments = 0
+    try:
+        writer = SegmentWriter(rate, capture_start)
+        need = frames * FRAME_BYTES
+        pending = rest
+        while got < need:
+            if not pending:
+                chunk = conn.recv(1 << 16)
+                if not chunk:
+                    raise ConnectionError("eof at %d/%d bytes" % (got, need))
+                pending = chunk
+            # decode whole frames out of pending
+            whole = (len(pending) // FRAME_BYTES) * FRAME_BYTES
+            whole = min(whole, need - got)
+            if whole == 0:
+                # wait for more data to complete a frame
+                chunk = conn.recv(1 << 16)
+                if not chunk:
+                    raise ConnectionError("eof at %d/%d bytes (partial frame)" % (got, need))
+                pending += chunk
+                continue
+            block, pending = pending[:whole], pending[whole:]
+            for off in range(0, whole, FRAME_BYTES):
+                writer.write(decode_frame(block[off:off + FRAME_BYTES]))
+            got += whole
 
-    writer.close()
-    conn.sendall(b"OK\n")
-    log.info("dump complete: %d bytes, %d segments", got, writer.segments_written)
-    touch_heartbeat(got, writer.segments_written)
+        writer.close()
+        conn.sendall(b"OK\n")
+        segments = writer.segments_written
+        log.info("dump complete: %d bytes, %d segments", got, segments)
+        touch_heartbeat(got, segments)
+    except Exception as exc:
+        # Failed attempts carry telemetry too: a flaky link is exactly when
+        # dropped_frames starts climbing, and the header already arrived.
+        write_telemetry(fields, addr, ok=False, bytes_got=got, segments=segments,
+                        duration=time.time() - t0, error=exc)
+        raise
+    write_telemetry(fields, addr, ok=True, bytes_got=got, segments=segments,
+                    duration=time.time() - t0, error=None)
 
 
 def main():

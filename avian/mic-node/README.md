@@ -113,6 +113,38 @@ A successful dump also refreshes `StreamData/.last-dump` (heartbeat marker);
 by analysis ~1-2 min after landing, so the dir is routinely empty — mtime of
 the newest WAV is NOT a reliable liveness signal).
 
+### Node telemetry (JSONL staging)
+
+Every dump attempt with a complete header (success OR failure) appends one
+JSON line to `~/BirdNET-Pi/data/node-telemetry/node-telemetry-YYYY-MM-DD.jsonl`
+(UTC day files). The record is every header field (numeric-coerced) plus
+`ts`, `src_ip`, `dump_ok`, `dump_bytes`, `segments`, `duration_s`, and
+`error` on failure. Node fw v1.58+ sends battery/power (`batt_mv`, `batt_pct`,
+`batt_chg`, `batt_vbus`, `batt_mode`, `batt_eta_full_min`, `batt_life_min`),
+thermal (`esp_temp_c`, `pmu_temp_c`), radio (`rssi_dbm`, `tx_dbm`, `eco_mode`,
+`eco_effective`), buffer (`dropped_frames`, `buf_pending_frames`,
+`buf_used_pct`, `buf_dump_fails`), and boot state (`uptime_s`,
+`restart_count`, `boot_reason`, `prev_reboot`, `fw_version`); older nodes
+send only the original 7 fields. Telemetry rides the existing dump
+connection — no extra node radio activity (ECO-safe).
+
+Overrides: `NODE_TELEMETRY_DIR`, `NODE_TELEMETRY_RETENTION_DAYS` (default 45;
+swept once per UTC day). This is the staging point for a later Prometheus
+exporter — note `dropped_frames` is a per-boot lifetime counter, and
+`restart_count`/`boot_reason`/`prev_reboot` identify boot boundaries.
+
+```bash
+tail -f ~/BirdNET-Pi/data/node-telemetry/node-telemetry-$(date -u +%F).jsonl | jq .
+```
+
+Redeploy after editing `birdnet-dumpd.py`:
+
+```bash
+sudo cp avian/mic-node/birdnet-dumpd.py /usr/local/bin/
+sudo chmod +x /usr/local/bin/birdnet-dumpd.py
+sudo systemctl restart birdnet-dumpd
+```
+
 ## 4. Smoke test
 
 ```bash
