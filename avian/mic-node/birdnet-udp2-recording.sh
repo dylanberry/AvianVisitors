@@ -31,10 +31,22 @@ UDP_READ_TIMEOUT_US="${UDP_READ_TIMEOUT_US:-600000000}"   # 10 min
 [ -z "$RECORDING_LENGTH" ] && RECORDING_LENGTH=15
 [ -d "$RECS_DIR/StreamData" ] || mkdir -p "$RECS_DIR/StreamData"
 
+# Fan-out mode (Bird Up! container adapter in the k8s cluster): the mic-node
+# unicast stream is received by birdup-fanout (socat) which re-emits it as
+# multicast (default 224.0.0.100, same port). When UDP2_STREAM_ADDR is that
+# multicast group, this listener joins the group instead of binding the
+# unicast socket, so the single unicast UDP port stays with the fan-out
+# relay. WAV output is byte-identical in both modes. Empty/0.0.0.0 = classic
+# unicast bind (no fan-out installed).
+STREAM_ADDR="${UDP2_STREAM_ADDR:-0.0.0.0}"
+STREAM_LOCALADDR="${UDP2_STREAM_LOCALADDR:-}"
+STREAM_URL="udp://${STREAM_ADDR}:${PORT}?timeout=${UDP_READ_TIMEOUT_US}"
+[ -n "$STREAM_LOCALADDR" ] && STREAM_URL="${STREAM_URL}&localaddr=${STREAM_LOCALADDR}"
+
 loop_ffmpeg() {
   while true; do
     if ! ffmpeg -hide_banner -loglevel "$LOGGING_LEVEL" -nostdin \
-        -f s16le -ar 48000 -ac 1 -i "udp://0.0.0.0:${PORT}?timeout=${UDP_READ_TIMEOUT_US}" \
+        -f s16le -ar 48000 -ac 1 -i "${STREAM_URL}" \
         -vn -map a:0 -acodec pcm_s16le -ac 1 -ar 48000 \
         -f segment -segment_format wav -segment_time "${RECORDING_LENGTH}" -strftime 1 \
         "${RECS_DIR}/StreamData/%F-birdnet-UDP2-%H:%M:%S.wav"

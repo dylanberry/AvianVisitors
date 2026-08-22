@@ -1,0 +1,19 @@
+[Unit]
+Description=Bird Up! mic-node UDP fan-out (unicast :8555 -> multicast 224.0.0.100)
+# The T-SIM7080G mic node pushes unicast UDP to 192.168.86.50:8555. One
+# process must own that unicast socket (SO_REUSEADDR gives the newest binder
+# the datagrams), so this relay is the sole receiver and re-emits the stream
+# as multicast, which the BirdNET-Pi listener (birdnet-udp2, multicast join)
+# and the cluster's BirdNET-Go instance both subscribe to. The node firmware
+# is untouched; BNP WAV output is byte-identical.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/socat -u UDP4-RECVFROM:8555,reuseaddr,fork UDP4-DATAGRAM:224.0.0.100:8555,ip-multicast-loop=0
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

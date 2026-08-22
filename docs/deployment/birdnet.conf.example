@@ -18,3 +18,12 @@ RECORDING_LENGTH=15
 
 # Optional: disable Flickr if you don't have a key.
 FLICKR_API_KEY=
+
+# --- Mic-node UDP fan-out (Bird Up! k8s adapter / BirdNET-Go) ----------------
+# When birdup-fanout (socat) is installed, the node's unicast stream is
+# re-emitted as multicast on UDP2_STREAM_ADDR. This listener then joins the
+# group (wired to the LAN IP via UDP2_STREAM_LOCALADDR) so BNP keeps ingesting
+# while the cluster gets its copy. Leave UDP2_STREAM_ADDR empty (or 0.0.0.0)
+# for the classic single-listener bind.
+UDP2_STREAM_ADDR=224.0.0.100
+UDP2_STREAM_LOCALADDR=192.168.86.50
