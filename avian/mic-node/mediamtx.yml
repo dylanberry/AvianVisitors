@@ -6,10 +6,11 @@
 # (the cluster), so this relay re-publishes the stream as RTSP on :8554 for
 # the in-cluster BirdNET-Go instance (unicast, deterministic).
 #
-# runOnInit spawns the relaying ffmpeg (restarted by runOnInitRestart); the
-# relay joins the multicast group locally (same host as the socat sender) and
-# publishes L16/48k/mono to mediamtx itself (loopback publish). RTSP keeps the
-# session alive across the mic node's silent gaps.
+# runOnInit spawns the relaying ffmpeg (restarted by runOnInitRestart). The
+# relay mixes the multicast mic feed with an endless silence source, so the
+# RTSP publish is ALWAYS up (RTSP paths only exist while a publisher is
+# attached; a live stream is also what BNG's probe needs during silent gaps).
+# amix normalize=0 keeps the mic at unity gain; AAC 96k mono.
 rtspAddress: :8554
 # Extra listeners disabled: :8888 (HLS) is taken by gotty on this host;
 # we only need the RTSP relay for the cluster BirdNET-Go.
@@ -17,5 +18,5 @@ api: false
 hls: false
 paths:
   mic:
-    runOnInit: ffmpeg -hide_banner -loglevel error -nostdin -f s16le -ar 48000 -ac 1 -i udp://224.0.0.100:8555 -c:a aac -b:a 96k -ar 48000 -ac 1 -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/mic
+    runOnInit: ffmpeg -hide_banner -loglevel error -nostdin -stream_loop -1 -f lavfi -i anullsrc=r=48000:cl=mono -f s16le -ar 48000 -ac 1 -i udp://224.0.0.100:8555 -filter_complex "[0:a][1:a]amix=inputs=2:duration=longest:normalize=0[a]" -map "[a]" -c:a aac -b:a 96k -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/mic
     runOnInitRestart: yes
