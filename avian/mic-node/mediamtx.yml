@@ -11,6 +11,9 @@
 # publishes L16/48k/mono to mediamtx itself (loopback publish). RTSP keeps the
 # session alive across the mic node's silent gaps.
 rtspAddress: :8554
+# API/metrics listener disabled: port 8888 is in use on this host and we
+# don't need the control API. (RTSP relay only.)
+api: false
 paths:
   mic:
     runOnInit: ffmpeg -hide_banner -loglevel error -nostdin -f s16le -ar 48000 -ac 1 -i udp://224.0.0.100:8555 -c:a copy -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/mic
