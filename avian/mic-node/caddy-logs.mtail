@@ -10,6 +10,7 @@
 counter requests_total by host
 counter methods_total by method
 counter status_total by class
+counter status_401_total
 gauge latency_seconds by host
 
 /\"logger\":\"http\.log\.access/ {
@@ -27,5 +28,9 @@ gauge latency_seconds by host
 
   /\"status\":(?P<status>[0-9]+)/ {
     status_total[int($status / 100) * 100]++
+
+    /\"status\":401/ {
+      status_401_total++
+    }
   }
 }
