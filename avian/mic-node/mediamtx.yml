@@ -1,0 +1,17 @@
+# mediamtx — Bird Up! mic-node RTSP relay.
+#
+# The mic node pushes unicast PCM to :8555; birdup-fanout (socat) re-emits it
+# as multicast 224.0.0.100:8555 on wlan0. BNP's listener joins the group on
+# the same radio, but Wi-Fi multicast does not reliably reach wired clients
+# (the cluster), so this relay re-publishes the stream as RTSP on :8554 for
+# the in-cluster BirdNET-Go instance (unicast, deterministic).
+#
+# runOnInit spawns the relaying ffmpeg (restarted by runOnInitRestart); the
+# relay joins the multicast group locally (same host as the socat sender) and
+# publishes L16/48k/mono to mediamtx itself (loopback publish). RTSP keeps the
+# session alive across the mic node's silent gaps.
+rtspAddress: :8554
+paths:
+  mic:
+    runOnInit: ffmpeg -hide_banner -loglevel error -nostdin -f s16le -ar 48000 -ac 1 -i udp://224.0.0.100:8555 -c:a copy -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/mic
+    runOnInitRestart: yes
