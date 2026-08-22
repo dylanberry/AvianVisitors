@@ -17,5 +17,5 @@ api: false
 hls: false
 paths:
   mic:
-    runOnInit: ffmpeg -hide_banner -loglevel error -nostdin -f s16le -ar 48000 -ac 1 -i udp://224.0.0.100:8555 -c:a copy -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/mic
+    runOnInit: ffmpeg -hide_banner -loglevel error -nostdin -f s16le -ar 48000 -ac 1 -i udp://224.0.0.100:8555 -c:a aac -b:a 96k -ar 48000 -ac 1 -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/mic
     runOnInitRestart: yes
