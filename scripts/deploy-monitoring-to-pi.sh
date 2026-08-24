@@ -79,7 +79,7 @@ else
 fi
 
 echo "==> enabling services"
-ssh_ "sudo systemctl daemon-reload && sudo systemctl enable --now birdup-exporter birdup-mtail birdup-phpfpm-exporter"
+ssh_ "sudo systemctl daemon-reload && sudo systemctl enable birdup-exporter birdup-mtail birdup-phpfpm-exporter && sudo systemctl restart birdup-exporter birdup-mtail birdup-phpfpm-exporter"
 
 echo "==> verifying"
 checks=(
