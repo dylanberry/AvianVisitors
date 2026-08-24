@@ -106,6 +106,7 @@ class Controller:
             "guard_tripped": None,
             "last_transition_epoch": None,
             "last_tick_epoch": None,
+            "reports": {},                 # phase name -> analysis report dict
         }
 
     def save(self):
@@ -206,6 +207,123 @@ class Controller:
         snap["prev_reboot"] = labels.get("prev_reboot", "")
         return snap
 
+    # ------------------------------------------------------------- analysis
+
+    def _prom_range(self, query, start, end, step=300):
+        """query_range -> [(ts, value), ...] for the first result series."""
+        url = (self.cfg["prometheus_url"].rstrip("/") +
+               "/api/v1/query_range?query=" + urllib.parse.quote(query) +
+               "&start=%.0f&end=%.0f&step=%d" % (start, end, step))
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        result = data.get("data", {}).get("result", [])
+        if not result:
+            return []
+        pts = []
+        for ts, val in result[0].get("values", []):
+            try:
+                pts.append((float(ts), float(val)))
+            except (TypeError, ValueError):
+                pass
+        return pts
+
+    @staticmethod
+    def _lin_slope_per_hour(pts):
+        """Least-squares slope of (epoch, value) points, per hour."""
+        n = len(pts)
+        if n < 4:
+            return None
+        sx = sum(p[0] for p in pts); sy = sum(p[1] for p in pts)
+        sxx = sum(p[0] * p[0] for p in pts); sxy = sum(p[0] * p[1] for p in pts)
+        denom = n * sxx - sx * sx
+        if denom == 0:
+            return None
+        return (n * sxy - sx * sy) / denom * 3600.0
+
+    def analyze_phase(self, idx, start, end, run_s, completed_by):
+        """Compute the per-phase report over [start, end] from Prometheus and
+        store it in state. Skipped silently for jsonl telemetry source or
+        phases with <1 battery-hour."""
+        if self.cfg.get("telemetry_source", "jsonl") != "prometheus":
+            return
+        phase = self.phases[idx]
+        name = phase["name"]
+        if run_s < 3600:
+            log.info("phase %s: %.0f battery-s, too short to analyze", name, run_s)
+            return
+        try:
+            mv_pts = self._prom_range(
+                "birdnode_battery_millivolts and (birdnode_battery_vbus == 0)", start, end)
+            pct_pts = self._prom_range(
+                "birdnode_battery_soc_percent and (birdnode_battery_vbus == 0)", start, end)
+            dur = max(1, int(end - start))
+            def inst(q):
+                v = self._prom_value_at(q, end)
+                return v
+            report = {
+                "phase": name,
+                "config": phase.get("set", {}),
+                "start": start, "end": end, "completed_by": completed_by,
+                "battery_hours": round(run_s / 3600.0, 2),
+                "slope_mv_per_hour": self._lin_slope_per_hour(mv_pts),
+                "slope_pct_per_hour": self._lin_slope_per_hour(pct_pts),
+                "discharge_samples": len(mv_pts),
+                "duty_cycle": inst("avg_over_time((birdnode_last_dump_duration_seconds / birdnode_dump_interval_seconds)[%ds:60])" % dur),
+                "dropped_frames": inst("increase(birdnode_dropped_frames_total[%ds])" % dur),
+                "restarts": inst("increase(birdnode_restart_count[%ds])" % dur),
+                "rssi_dbm_avg": inst("avg_over_time(birdnode_rssi_dbm[%ds:60])" % dur),
+            }
+            with self.lock:
+                self.state.setdefault("reports", {})[name] = report
+                self.save()
+            log.info("phase %s report: %s", name, report)
+            self._report_notify(report)
+        except Exception:
+            log.exception("phase %s analysis failed", name)
+
+    def _prom_value_at(self, query, at):
+        url = (self.cfg["prometheus_url"].rstrip("/") +
+               "/api/v1/query?query=" + urllib.parse.quote(query) +
+               "&time=%.0f" % at)
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        result = data.get("data", {}).get("result", [])
+        if not result:
+            return None
+        try:
+            return float(result[0]["value"][1])
+        except (TypeError, KeyError, IndexError, ValueError):
+            return None
+
+    def _report_notify(self, report):
+        name = report["phase"]
+        mv = report.get("slope_mv_per_hour")
+        baseline = self.state.get("reports", {}).get("baseline")
+        lines = [
+            "battery time: %.1f h (%s)" % (report["battery_hours"], report["completed_by"]),
+            "discharge slope: %s mV/h | %s %%/h (%d discharge samples)" % (
+                ("%.1f" % mv) if mv is not None else "n/a",
+                ("%.2f" % report["slope_pct_per_hour"]) if report.get("slope_pct_per_hour") is not None else "n/a",
+                report["discharge_samples"]),
+            "duty cycle: %s | drops: %s | restarts: %s | rssi: %s dBm" % (
+                ("%.1f%%" % (report["duty_cycle"] * 100)) if report.get("duty_cycle") is not None else "n/a",
+                ("%.0f" % report["dropped_frames"]) if report.get("dropped_frames") is not None else "n/a",
+                ("%.0f" % report["restarts"]) if report.get("restarts") is not None else "n/a",
+                ("%.0f" % report["rssi_dbm_avg"]) if report.get("rssi_dbm_avg") is not None else "n/a"),
+        ]
+        verdict = None
+        if mv is not None and baseline and baseline.get("slope_mv_per_hour") and name != "baseline":
+            base_mv = baseline["slope_mv_per_hour"]
+            if base_mv < 0 and mv < 0:
+                delta = (abs(mv) / abs(base_mv) - 1.0) * 100.0
+                verdict = "vs baseline: %+.0f%% discharge rate" % delta
+                lines.append(verdict)
+        body = "\n".join(lines)
+        self._notify("powerbench: phase %s %s" % (name, report["completed_by"]), body)
+        self._annotate("phase %s %s: %s" % (name, report["completed_by"],
+                                            verdict or "report ready"),
+                       ["powerbench", name, "report"])
+
     def latest_record(self):
         """Newest JSONL record across today+yesterday (UTC rollover)."""
         import datetime
@@ -294,7 +412,19 @@ class Controller:
             log.warning("grafana annotation failed: %s", exc)
 
     def _enter_phase(self, idx):
-        """Apply phase idx's config and reset per-phase accounting."""
+        """Apply phase idx's config and reset per-phase accounting. Analyzes
+        the outgoing phase first (report -> state/metrics + ntfy + Grafana)."""
+        st = self.state
+        prev_idx = st["phase_index"]
+        if idx != prev_idx and prev_idx < len(self.phases) and st.get("phase_start_epoch"):
+            self.analyze_phase(prev_idx, st["phase_start_epoch"], time.time(),
+                               st.get("phase_run_s", 0.0), "complete")
+        if idx >= len(self.phases):
+            # Schedule complete: mark done; tick() applies baseline + notifies.
+            st["phase_index"] = idx
+            st["last_transition_epoch"] = time.time()
+            self.save()
+            return
         phase = self.phases[idx]
         name = phase["name"]
         log.info("entering phase %d (%s)", idx, name)
@@ -323,8 +453,14 @@ class Controller:
         self._annotate("powerbench phase: %s" % name, ["powerbench", name])
 
     def _abort(self, reason):
-        """Revert to baseline and halt the schedule."""
+        """Revert to baseline and halt the schedule. Analyzes the interrupted
+        phase first (partial data still informs the guard decision)."""
         log.error("ABORT: %s", reason)
+        st = self.state
+        idx = st["phase_index"]
+        if idx < len(self.phases) and st.get("phase_start_epoch"):
+            self.analyze_phase(idx, st["phase_start_epoch"], time.time(),
+                               st.get("phase_run_s", 0.0), "aborted")
         self.apply_config(self.state["baseline"], self.cfg["apply_timeout_s"])
         st = self.state
         st["halted"] = True
@@ -487,6 +623,32 @@ class Controller:
         out.append("# HELP powerbench_apply_failures_total Config apply timeouts.")
         out.append("# TYPE powerbench_apply_failures_total counter")
         out.append("powerbench_apply_failures_total %d" % fails)
+        # Per-phase analysis reports (computed at phase exit).
+        report_metrics = [
+            ("slope_mv_per_hour", "powerbench_phase_report_slope_mv_per_hour",
+             "Battery discharge slope during the phase (mV/h, discharge-only samples, negative = draining)."),
+            ("slope_pct_per_hour", "powerbench_phase_report_slope_pct_per_hour",
+             "Battery discharge slope during the phase (SOC %/h)."),
+            ("duty_cycle", "powerbench_phase_report_duty_cycle",
+             "Radio duty cycle (dump window / interval) during the phase."),
+            ("dropped_frames", "powerbench_phase_report_dropped_frames",
+             "Dropped audio frames during the phase."),
+            ("restarts", "powerbench_phase_report_restarts",
+             "Node reboots during the phase."),
+            ("rssi_dbm_avg", "powerbench_phase_report_rssi_dbm_avg",
+             "Mean WiFi RSSI during the phase (confound check)."),
+            ("battery_hours", "powerbench_phase_report_battery_hours",
+             "Battery-discharge hours the phase accumulated."),
+        ]
+        reports = st.get("reports", {})
+        for key, metric, help_ in report_metrics:
+            out.append("# HELP %s %s" % (metric, help_))
+            out.append("# TYPE %s gauge" % metric)
+            for phase_name, rep in sorted(reports.items()):
+                val = rep.get(key)
+                if val is None:
+                    continue
+                out.append('%s{phase="%s"} %s' % (metric, phase_name, val))
         return "\n".join(out) + "\n"
 
     # ------------------------------------------------------------------- run
