@@ -1,0 +1,33 @@
+{
+  "comment": "Power-efficiency experiment schedule. Phases run in order; the phase clock only accumulates while the node is discharging on battery above battery_floor_pct. 'set' keys are pushed via /api/set at phase entry; on guard trip or abort the node is reverted to the captured baseline. End of schedule = revert to baseline and idle.",
+  "phases": [
+    {
+      "name": "baseline",
+      "duration_h": 48,
+      "set": {},
+      "guards": [],
+      "why": "Control: current shipping config (cpu 160, tx -1, dump 300s). Establishes the reference discharge slope."
+    },
+    {
+      "name": "cpu80",
+      "duration_h": 24,
+      "set": { "pwr_cpu_low": "80" },
+      "guards": ["crash"],
+      "why": "REC-phase CPU at 80 MHz (v1.54-hardened path). Abort on any interrupt_wdt reboot."
+    },
+    {
+      "name": "dump420",
+      "duration_h": 24,
+      "set": { "udp_buf_int_s": "420" },
+      "guards": ["drops"],
+      "why": "Fewer radio windows/hr. Abort if ring margin erodes (dropped_frames climbs > drop_guard_frames)."
+    },
+    {
+      "name": "txpower85",
+      "duration_h": 24,
+      "set": { "pwr_tx_dbm": "8.5" },
+      "guards": [],
+      "why": "Slower-but-cooler dump windows: compare window length x slope vs 15 dBm to find min energy per dump."
+    }
+  ]
+}

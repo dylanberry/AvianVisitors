@@ -1,0 +1,15 @@
+[Unit]
+Description=Bird Up! powerbench experiment controller (mic node power experiments)
+After=network-online.target birdnet-dumpd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dylanberry
+Environment=POWERBENCH_CONF_DIR=/home/dylanberry/.powerbench
+ExecStart=/usr/local/bin/powerbench.py run
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

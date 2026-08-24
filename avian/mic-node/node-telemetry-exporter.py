@@ -233,9 +233,10 @@ class NodeTelemetry:
         node = latest.get("node", "unknown")
         info = {'node': node if isinstance(node, str) else "unknown",
                 'fw_version': str(latest.get("fw_version", "unknown")),
-                'boot_reason': str(latest.get("boot_reason", "unknown"))}
-        labels = ', '.join('%s="%s"' % (k, v) for k, v in info.items())
-        out.append("# HELP birdnode_info Static identity of the most recent node boot.")
+                'boot_reason': str(latest.get("boot_reason", "unknown")),
+                'prev_reboot': str(latest.get("prev_reboot", "unknown"))}
+        labels = ', '.join('%s="%s"' % (k, _label_escape(v)) for k, v in info.items())
+        out.append("# HELP birdnode_info Static identity of the most recent node boot (prev_reboot = latched cause of the previous reboot, if the node provided one).")
         out.append("# TYPE birdnode_info gauge")
         out.append("birdnode_info{%s} 1" % labels)
         for key, name, kind, help_ in _FIELD_METRICS + _DUMP_STAT_METRICS:
@@ -245,6 +246,10 @@ class NodeTelemetry:
             out.append("# TYPE %s %s" % (name, kind))
             out.append("%s %s" % (name, _fmt(latest[key])))
         return "\n".join(out) + "\n"
+
+
+def _label_escape(v):
+    return str(v).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 def _fmt(v):
